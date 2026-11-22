@@ -161,8 +161,8 @@ async fn handle_ws_payload(
     if trimmed == "[DONE]" {
         return FrameStep::Done;
     }
-    if let Some((_, msg)) = extract_sse_error(trimmed) {
-        ctx.abort_payload_err(tx, &msg).await;
+    if let Some(err) = extract_sse_error(trimmed) {
+        ctx.abort_payload_err(tx, err.status, &err.message).await;
         return FrameStep::Aborted;
     }
     if !ctx.emit_delta(trimmed, extract_delta, tx).await {

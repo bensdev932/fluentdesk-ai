@@ -12,6 +12,7 @@ use crate::modules::speech::{
     synthesis::TutorPlaybackEvent, transcription::UserTranscriptReadyEvent,
 };
 use crate::stt::provider::{SpeechToText, SttPromptContext};
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -24,18 +25,21 @@ impl SpeakingSessionHost {
             Arc<dyn SpeechToText>,
             SttPromptContext,
             SessionCancellationToken,
+            u64,
         ),
         SessionError,
     > {
         let mut guard = self.active.lock().await;
         let mgr = verify_active_mut(guard.as_mut(), sid)?;
         require_state(mgr, SessionState::Listening, SessionState::Processing)?;
+        let turn_gen = self.next_turn_gen();
         mgr.speech_intake.reset();
         mgr.transition_to(SessionState::Processing)?;
         Ok((
             mgr.adapters.stt.clone(),
             mgr.stt_prompt_context(),
             mgr.cancellation.clone(),
+            turn_gen,
         ))
     }
 
@@ -77,6 +81,35 @@ impl SpeakingSessionHost {
             final_state: mgr.state,
         })
     }
+
+    pub(crate) fn next_turn_gen(&self) -> u64 {
+        self.turn_gen.fetch_add(1, Ordering::AcqRel).wrapping_add(1)
+    }
+
+    pub(crate) fn current_turn_gen(&self) -> u64 {
+        self.turn_gen.load(Ordering::Acquire)
+    }
+
+    pub async fn cancel_turn_if_gen(&self, session_id: &SessionId, expected_gen: u64) -> bool {
+        let mut guard = self.active.lock().await;
+        if self.turn_gen.load(Ordering::Acquire) != expected_gen {
+            return false;
+        }
+        match guard.as_mut().filter(|m| m.session_id() == session_id) {
+            Some(mgr) if is_turn_in_flight(mgr.state) => {
+                self.next_turn_gen();
+                cancel_mgr_turn(mgr).await
+            }
+            _ => false,
+        }
+    }
+}
+
+pub(crate) fn is_turn_in_flight(state: SessionState) -> bool {
+    matches!(
+        state,
+        SessionState::Processing | SessionState::Thinking | SessionState::Speaking
+    )
 }
 
 pub(crate) fn verify_turn_active<'a>(
@@ -141,10 +174,7 @@ pub(crate) async fn cancel_mgr_turn(mgr: &mut SessionManager) -> bool {
 async fn reset_mgr_listening(mgr: &mut SessionManager) {
     let _ = mgr.adapters.audio_output.stop_playback().await;
     mgr.speech_intake.reset();
-    if matches!(
-        mgr.state,
-        SessionState::Processing | SessionState::Thinking | SessionState::Speaking
-    ) {
+    if is_turn_in_flight(mgr.state) {
         let _ = mgr.transition_to(SessionState::Listening);
     }
 }

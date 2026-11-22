@@ -31,13 +31,22 @@ pub(super) async fn handle_turn_sse_stream(
         Ok(parsed) => parsed,
         Err(resp) => return resp.into_response(),
     };
+    let now_ms = current_unix_ms();
+    let prep = match host
+        .prepare_replaceable_text_turn(&sid, &tx, mode, now_ms)
+        .await
+    {
+        Ok(prep) => prep,
+        Err(err) => return map_session_http_error(&err).into_response(),
+    };
+    let turn_gen = prep.turn_gen;
     let (sent_tx, sent_rx) = mpsc::channel(16);
     let (sse_tx, sse_rx) = mpsc::channel(16);
     let completed = Arc::new(AtomicBool::new(false));
     let (t_host, t_sid) = (Arc::clone(&host), sid.clone());
     let task = tokio::spawn(async move {
         t_host
-            .submit_text_turn_stream(&t_sid, &tx, mode, current_unix_ms(), sent_tx)
+            .run_prepared_text_turn_stream(&t_sid, prep, &tx, now_ms, sent_tx)
             .await
     });
     tokio::spawn(pump_sse(
@@ -45,6 +54,7 @@ pub(super) async fn handle_turn_sse_stream(
         sent_rx,
         Arc::clone(&host),
         sid.clone(),
+        turn_gen,
         task,
         Arc::clone(&completed),
     ));
@@ -52,6 +62,7 @@ pub(super) async fn handle_turn_sse_stream(
         rx: sse_rx,
         host,
         sid,
+        turn_gen,
         completed,
     })
     .into_response()
@@ -61,6 +72,7 @@ struct SseTurnStream {
     rx: mpsc::Receiver<Result<Event, Infallible>>,
     host: Arc<SpeakingSessionHost>,
     sid: SessionId,
+    turn_gen: u64,
     completed: Arc<AtomicBool>,
 }
 
@@ -74,9 +86,9 @@ impl Stream for SseTurnStream {
 impl Drop for SseTurnStream {
     fn drop(&mut self) {
         if !self.completed.load(Ordering::Acquire) {
-            let (host, sid) = (Arc::clone(&self.host), self.sid.clone());
+            let (host, sid, turn_gen) = (Arc::clone(&self.host), self.sid.clone(), self.turn_gen);
             tokio::spawn(async move {
-                host.cancel_active_turn(&sid).await;
+                host.cancel_turn_if_gen(&sid, turn_gen).await;
             });
         }
     }
@@ -87,6 +99,7 @@ async fn pump_sse(
     mut sent_rx: mpsc::Receiver<String>,
     host: Arc<SpeakingSessionHost>,
     sid: SessionId,
+    turn_gen: u64,
     task: TurnJoin,
     completed: Arc<AtomicBool>,
 ) {
@@ -94,7 +107,7 @@ async fn pump_sse(
         let payload = json!({ "text": sentence }).to_string();
         if send_ev(&sse_tx, "sentence", payload).await.is_err() {
             drop(sent_rx);
-            host.cancel_active_turn(&sid).await;
+            host.cancel_turn_if_gen(&sid, turn_gen).await;
             let _ = task.await;
             return;
         }
@@ -113,11 +126,20 @@ async fn emit_terminal_sse(
             serde_json::to_string(&SessionTurnHttpResponse::from_outcome(o))
                 .unwrap_or_else(|_| "{}".into()),
         ),
-        Ok(Err(err)) => ("error", map_session_http_error(&err).body),
-        Err(_) => ("error", r#"{"error":"Turn task crashed."}"#.to_string()),
+        Ok(Err(err)) => ("error", sse_error_payload(&err)),
+        Err(_) => (
+            "error",
+            r#"{"error":"Turn task crashed.","status":502}"#.to_string(),
+        ),
     };
     completed.store(true, Ordering::Release);
     let _ = send_ev(sse_tx, ev_name, data).await;
+}
+
+fn sse_error_payload(err: &crate::domain::SessionError) -> String {
+    let mapped = map_session_http_error(err);
+    let msg = crate::telemetry::redact_sensitive_log_text(&err.user_message);
+    json!({ "error": msg, "status": mapped.status }).to_string()
 }
 
 async fn send_ev(

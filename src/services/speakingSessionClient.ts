@@ -8,7 +8,7 @@ import { SAMPLE_UTTERANCES } from './sampleUtterances';
 import { DEFAULT_ROLEPLAY_SCENARIOS } from './scenariosFallback';
 import { clearAllLearnerFacts, fetchLearnerFacts, fetchSessionReview, removeLearnerFact } from './reviewApi';
 import {
-  OFFLINE_SOURCE, buildOfflineTurnOutcome, extractOnlineTurnOutcome, normalizeTurn, offlineWarning,
+  OFFLINE_SOURCE, buildOfflineTurnOutcome, buildOnlineTurnFailureEvent, extractOnlineTurnOutcome, normalizeTurn, offlineWarning,
 } from './speakingSessionCodec';
 import {
   abortRuntimeInFlight, createInitialOfflineState, finishStreamedReplyAndReturn, playReplyAndReturn,
@@ -81,7 +81,7 @@ export function createSpeakingSessionClient(opts: SpeakingSessionClientOptions =
       const turnOpts = { signal: ctrl.signal, timeoutMs: TURN_TIMEOUT_MS, onSentence, getSpeechProgress: queue.getProgress };
       const body = { userText: text, correctionMode: ctx.correctionMode };
       const res = await (async () => {
-        if (rt.ws && !rt.ws.isClosed() && (await rt.ws.awaitReady(opts.wsConnectTimeoutMs ?? 60, ctrl.signal))) {
+        if (rt.ws && !rt.ws.isClosed() && (await rt.ws.awaitReady(opts.wsConnectTimeoutMs ?? 250, ctrl.signal))) {
           const wsRes = await rt.ws.runTextTurn(body, turnOpts);
           if (wsRes.ok || ctrl.signal.aborted || !wsRes.unreachable || wsRes.hadSentences) return wsRes;
           rt.ws.close();
@@ -89,7 +89,7 @@ export function createSpeakingSessionClient(opts: SpeakingSessionClientOptions =
         } else if (rt.ws?.isClosed()) rt.ws = null;
         return postTurnWithOptionalSse(apiUrl(`/api/sessions/${encodeURIComponent(ctx.sessionId)}/turn`, rt.baseUrl), body, turnOpts);
       })();
-      if (ctrl.signal.aborted || rt.active?.sessionId !== ctx.sessionId) { queue.stop(); return; }
+      if (ctrl.signal.aborted || rt.active?.sessionId !== ctx.sessionId) { queue.stop(); if (rt.activeTurnAbort === ctrl) rt.activeTurnAbort = null; return; }
       if (res.ok) {
         const outcome = extractOnlineTurnOutcome(res.data);
         if (queue.hasQueued()) await finishStreamedReplyAndReturn(rt, ctx, ctrl, queue, outcome, confidence);
@@ -99,9 +99,11 @@ export function createSpeakingSessionClient(opts: SpeakingSessionClientOptions =
       queue.stop();
       rt.stopSpeech = null;
       rt.getSpeechProgress = null;
+      if (rt.activeTurnAbort === ctrl) rt.activeTurnAbort = null;
       if (!res.unreachable) {
-        ctx.state = 'Error';
-        rt.emit({ type: 'session-error', sessionId: ctx.sessionId, error: { kind: 'InvalidStateTransition', userMessage: res.message, recoverable: true } });
+        const failure = buildOnlineTurnFailureEvent(ctx.sessionId, res.status, res.message);
+        ctx.state = failure.nextState;
+        rt.emit(failure.event);
         return;
       }
       ctx.offline = true;

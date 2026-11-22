@@ -4,10 +4,13 @@ use crate::domain::{AudioFormat, CorrectionMode, SessionId, Transcript};
 use crate::local_server::session_handlers::current_unix_ms;
 use crate::local_server::ws_audio::{decode_pcm_frame, WsAudioMsg, WsUtteranceWork};
 use crate::local_server::ws_protocol::{WsClientCommand, WsServerEvent};
-use crate::local_server::ws_turns::{run_ws_spoken_turn, run_ws_text_turn};
+use crate::local_server::ws_turn_events::emit_ws_protocol_err;
+pub(super) use crate::local_server::ws_turn_events::send_ws_event;
+use crate::local_server::ws_turns::{run_ws_spoken_turn, run_ws_text_turn, WsTurnCtx};
 use crate::modules::conversation::SpeakingSessionHost;
 use axum::extract::ws::{Message, WebSocket};
 use futures_util::{stream::SplitSink, SinkExt};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use tokio::sync::mpsc::{self, error::TrySendError};
 use tokio::task::JoinHandle;
@@ -18,6 +21,7 @@ pub(super) struct WsConnCtx {
     pub format: AudioFormat,
     pub turn_seq: u64,
     pub active_turn: Option<JoinHandle<()>>,
+    pub active_turn_gen: Arc<AtomicU64>,
     pub ev_tx: mpsc::Sender<WsServerEvent>,
     pub audio_tx: mpsc::Sender<WsAudioMsg>,
     pub stopped: bool,
@@ -44,7 +48,8 @@ async fn dispatch_command(
         WsClientCommand::StartTurn {
             user_text,
             correction_mode,
-        } => handle_start_turn(ctx, user_text, correction_mode).await,
+            turn_id,
+        } => handle_start_turn(ctx, user_text, correction_mode, turn_id).await,
         WsClientCommand::AudioFormat(p) => handle_audio_format(ctx, p.into_audio_format()).await,
         WsClientCommand::PttHold { held } => handle_ptt_hold(ctx, held).await,
         WsClientCommand::BargeIn {
@@ -67,6 +72,7 @@ async fn handle_start_turn(
     ctx: &mut WsConnCtx,
     user_text: Option<String>,
     mode: Option<CorrectionMode>,
+    client_turn_id: Option<String>,
 ) {
     let Some(raw) = user_text else {
         emit_status_snapshot(ctx).await;
@@ -77,11 +83,24 @@ async fn handle_start_turn(
         return;
     };
     abort_active_turn(ctx);
-    let tid = next_turn_id(ctx);
-    let (host, sid, ev_tx) = (Arc::clone(&ctx.host), ctx.sid.clone(), ctx.ev_tx.clone());
+    let tid = resolve_turn_id(ctx, client_turn_id);
     ctx.active_turn = Some(tokio::spawn(run_ws_text_turn(
-        host, sid, tx, mode, tid, ev_tx,
+        ws_turn_ctx(ctx),
+        tx,
+        mode,
+        tid,
     )));
+}
+
+fn resolve_turn_id(ctx: &mut WsConnCtx, client_turn_id: Option<String>) -> String {
+    let clean = client_turn_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty() && s.len() <= 64);
+    match clean {
+        Some(id) => id.to_string(),
+        None => next_turn_id(ctx),
+    }
 }
 
 fn parse_ws_transcript(raw: &str) -> Option<Transcript> {
@@ -108,6 +127,7 @@ async fn handle_barge_in(
     played_ms: Option<u32>,
 ) {
     abort_active_turn(ctx);
+    ctx.active_turn_gen.store(0, Ordering::Release);
     let snap = ctx
         .host
         .barge_in_with_progress(&ctx.sid, heard_sentences.as_deref(), played_ms)
@@ -145,10 +165,20 @@ async fn send_audio_chunk(ctx: &WsConnCtx, chunk: crate::domain::AudioChunk) {
 pub(super) fn start_spoken_turn(ctx: &mut WsConnCtx, work: WsUtteranceWork) {
     abort_active_turn(ctx);
     let tid = next_turn_id(ctx);
-    let (host, sid, ev_tx) = (Arc::clone(&ctx.host), ctx.sid.clone(), ctx.ev_tx.clone());
     ctx.active_turn = Some(tokio::spawn(run_ws_spoken_turn(
-        host, sid, work, tid, ev_tx,
+        ws_turn_ctx(ctx),
+        work,
+        tid,
     )));
+}
+
+fn ws_turn_ctx(ctx: &WsConnCtx) -> WsTurnCtx {
+    WsTurnCtx {
+        host: Arc::clone(&ctx.host),
+        sid: ctx.sid.clone(),
+        ev_tx: ctx.ev_tx.clone(),
+        turn_gen: Arc::clone(&ctx.active_turn_gen),
+    }
 }
 
 pub(super) fn abort_active_turn(ctx: &mut WsConnCtx) {
@@ -163,19 +193,5 @@ fn next_turn_id(ctx: &mut WsConnCtx) -> String {
 }
 
 async fn emit_ws_err(ctx: &WsConnCtx, msg: impl Into<String>) {
-    let ev = WsServerEvent::Error {
-        session_id: ctx.sid.clone(),
-        error: msg.into(),
-        kind: None,
-        recoverable: true,
-    };
-    let _ = ctx.ev_tx.send(ev).await;
-}
-
-pub(super) async fn send_ws_event(
-    ws_tx: &mut SplitSink<WebSocket, Message>,
-    ev: &WsServerEvent,
-) -> Result<(), ()> {
-    let json = serde_json::to_string(ev).map_err(|_| ())?;
-    ws_tx.send(Message::Text(json.into())).await.map_err(|_| ())
+    emit_ws_protocol_err(&ctx.sid, &ctx.ev_tx, msg).await;
 }

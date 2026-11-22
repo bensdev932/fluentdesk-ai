@@ -20,7 +20,7 @@ use crate::telemetry::RedactedSecret;
 use async_trait::async_trait;
 use serde_json::{json, Value};
 
-const GEMINI_TIMEOUT_SECS: u64 = 12;
+const GEMINI_TIMEOUT_SECS: u64 = 20;
 
 #[derive(Clone)]
 pub struct GeminiProvider {
@@ -172,23 +172,26 @@ fn map_gemini_turn(m: &ChatMessage) -> Value {
 pub(crate) fn extract_gemini_text(raw: &str) -> Result<String, SessionError> {
     let parsed: Value = serde_json::from_str(raw)
         .map_err(|e| gem_err("Unreadable response from Gemini API.", Some(e.to_string())))?;
-    parsed
-        .get("candidates")
-        .and_then(|v| v.as_array())
-        .into_iter()
-        .flatten()
-        .find_map(extract_candidate_text)
+    extract_candidates_text(&parsed, true)
         .ok_or_else(|| gem_err("Gemini API returned an empty response.", None))
 }
 
-fn extract_candidate_text(candidate: &Value) -> Option<String> {
+pub(crate) fn extract_candidates_text(parsed: &Value, reject_blank: bool) -> Option<String> {
+    parsed
+        .get("candidates")?
+        .as_array()?
+        .iter()
+        .find_map(|c| extract_candidate_text(c, reject_blank))
+}
+
+fn extract_candidate_text(candidate: &Value, reject_blank: bool) -> Option<String> {
     let parts = candidate.pointer("/content/parts")?.as_array()?;
     let text: String = parts
         .iter()
         .filter(|p| p.get("thought").and_then(|v| v.as_bool()) != Some(true))
         .filter_map(|p| p.get("text").and_then(|t| t.as_str()))
         .collect();
-    (!text.trim().is_empty()).then_some(text)
+    (!text.is_empty() && (!reject_blank || !text.trim().is_empty())).then_some(text)
 }
 
 fn gem_err(msg: &'static str, detail: Option<String>) -> SessionError {

@@ -69,6 +69,7 @@ impl SpeakingSessionHost {
     ) -> Result<SessionStatusSnapshot, SessionError> {
         let mut guard = self.active.lock().await;
         let mgr = verify_active_mut(guard.as_mut(), session_id)?;
+        self.next_turn_gen();
         let _ = cancel_mgr_turn(mgr).await;
         reconcile_barge_in_mgr(mgr, heard_sentences, played_ms).await?;
         Ok(mgr.status_snapshot())

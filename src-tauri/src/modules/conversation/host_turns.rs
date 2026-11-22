@@ -7,7 +7,7 @@ use crate::domain::{
     SessionError, SessionId, SessionState, Transcript,
 };
 pub(crate) use crate::modules::conversation::host_turn_guards::{
-    cancel_mgr_turn, cancelled_turn_err, elapsed_ms, fail_if_err, require_state,
+    cancel_mgr_turn, cancelled_turn_err, elapsed_ms, fail_if_err, is_turn_in_flight, require_state,
     verify_still_active, verify_turn_active,
 };
 use crate::modules::conversation::{
@@ -25,6 +25,7 @@ pub(crate) struct PreparedThinking {
     pub(crate) scaffold: PedagogicalScaffold,
     pub(crate) ai: Arc<dyn AiProvider>,
     pub(crate) cancel: SessionCancellationToken,
+    pub(crate) turn_gen: u64,
 }
 
 impl SpeakingSessionHost {
@@ -55,10 +56,28 @@ impl SpeakingSessionHost {
             return Err(cancelled_turn_err());
         }
         let mgr = verify_active_mut(guard.as_mut(), sid)?;
-        prepare_mgr_for_thinking(mgr, mode_override, from_listening)?;
-        let loaded = mgr.load_context_if_empty().await;
-        fail_if_err(mgr, loaded)?;
-        build_prepared_thinking(mgr, tx, now_ms).await
+        let turn_gen = if from_listening {
+            self.next_turn_gen()
+        } else {
+            self.current_turn_gen()
+        };
+        prepare_locked_thinking(mgr, tx, mode_override, now_ms, from_listening, turn_gen).await
+    }
+
+    pub(crate) async fn prepare_replaceable_text_turn(
+        &self,
+        sid: &SessionId,
+        tx: &Transcript,
+        mode_override: Option<CorrectionMode>,
+        now_ms: i64,
+    ) -> Result<PreparedThinking, SessionError> {
+        let mut guard = self.active.lock().await;
+        let mgr = verify_active_mut(guard.as_mut(), sid)?;
+        if is_turn_in_flight(mgr.state) {
+            cancel_mgr_turn(mgr).await;
+        }
+        let turn_gen = self.next_turn_gen();
+        prepare_locked_thinking(mgr, tx, mode_override, now_ms, true, turn_gen).await
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -120,10 +139,25 @@ fn prepare_mgr_for_thinking(
     Ok(())
 }
 
+async fn prepare_locked_thinking(
+    mgr: &mut SessionManager,
+    tx: &Transcript,
+    mode_override: Option<CorrectionMode>,
+    now_ms: i64,
+    from_listening: bool,
+    turn_gen: u64,
+) -> Result<PreparedThinking, SessionError> {
+    prepare_mgr_for_thinking(mgr, mode_override, from_listening)?;
+    let loaded = mgr.load_context_if_empty().await;
+    fail_if_err(mgr, loaded)?;
+    build_prepared_thinking(mgr, tx, now_ms, turn_gen).await
+}
+
 async fn build_prepared_thinking(
     mgr: &mut SessionManager,
     tx: &Transcript,
     now_ms: i64,
+    turn_gen: u64,
 ) -> Result<PreparedThinking, SessionError> {
     let (history, mode) = (mgr.context.recent_turns(), mgr.correction_mode);
     let u_res = mgr
@@ -137,5 +171,6 @@ async fn build_prepared_thinking(
         scaffold: mgr.scaffold.clone(),
         ai: mgr.adapters.ai.clone(),
         cancel: mgr.cancellation.clone(),
+        turn_gen,
     })
 }

@@ -22,6 +22,7 @@ use axum::extract::{
 use axum::http::HeaderMap;
 use axum::response::{IntoResponse, Response};
 use futures_util::{stream::SplitSink, StreamExt};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use tokio::sync::mpsc;
 
@@ -96,6 +97,7 @@ fn build_conn_ctx(
         format: default_ws_audio_format(),
         turn_seq: 0,
         active_turn: None,
+        active_turn_gen: Arc::new(AtomicU64::new(0)),
         ev_tx,
         audio_tx,
         stopped: false,
@@ -144,8 +146,11 @@ async fn handle_inbound_msg(
 }
 
 async fn cleanup_ws_session(ctx: &mut WsConnCtx) {
-    if !ctx.stopped {
-        let _ = ctx.host.cancel_active_turn(&ctx.sid).await;
-    }
     abort_active_turn(ctx);
+    if !ctx.stopped {
+        let turn_gen = ctx.active_turn_gen.load(Ordering::Acquire);
+        if turn_gen != 0 {
+            let _ = ctx.host.cancel_turn_if_gen(&ctx.sid, turn_gen).await;
+        }
+    }
 }

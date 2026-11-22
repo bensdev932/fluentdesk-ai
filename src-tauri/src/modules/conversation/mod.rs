@@ -23,6 +23,7 @@ pub mod turn;
 pub mod types;
 
 pub use host::SpeakingSessionHost;
+pub(crate) use host_spoken::SpokenTurnAck;
 pub use host_spoken_events::SpokenTurnEvent;
 pub use types::{SessionStatusSnapshot, StartSpeakingSessionConfig, TextTurnOutcome};
 

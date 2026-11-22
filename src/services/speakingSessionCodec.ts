@@ -13,7 +13,7 @@ import {
   type TutorReply,
 } from '../types/domain';
 import { buildReplySource } from './apiTransport';
-import type { ReplySourceStatus } from './tauriService';
+import type { ReplySourceStatus, VoiceLoopEvent } from './tauriService';
 import { generateTutorCoachingReply } from './tutorCoach';
 
 export const OFFLINE_SOURCE: ReplySourceStatus = {
@@ -157,6 +157,39 @@ export function buildOfflineTurnOutcome(
       ...(reply.correction ? { correction: reply.correction } : {}),
       ...(reply.followUpPrompt ? { followUpPrompt: reply.followUpPrompt } : {}),
       timestampUnixMs: now + 1,
+    },
+  };
+}
+
+export function buildOnlineTurnFailureEvent(
+  sessionId: SessionId,
+  status: number | undefined,
+  message: string,
+): { nextState: SessionState; event: VoiceLoopEvent } {
+  if (status === 504) {
+    return {
+      nextState: 'Listening',
+      event: {
+        type: 'session-state-changed',
+        sessionId,
+        state: 'Listening',
+        warning: { kind: 'AiProviderUnavailable', userMessage: message, recoverable: true },
+      },
+    };
+  }
+  const kind = status === 503
+    ? 'AiProviderUnavailable'
+    : status === 502
+      ? 'AiInferenceFailed'
+      : status === 500
+        ? 'PersistenceFailed'
+        : 'InvalidStateTransition';
+  return {
+    nextState: 'Error',
+    event: {
+      type: 'session-error',
+      sessionId,
+      error: { kind, userMessage: message, recoverable: true },
     },
   };
 }

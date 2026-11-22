@@ -1,7 +1,10 @@
 //! Minimal localhost HTTP/1.1 client for the local Ollama daemon (`T031`).
 
-use crate::ai::{ollama::OllamaConfig, ollama_http_codec::parse_http_response};
-use crate::domain::{SessionError, SessionErrorKind};
+use crate::ai::ollama::OllamaConfig;
+pub(crate) use crate::ai::ollama_http_codec::{
+    io_err, ollama_service_err, parse_err, parse_http_response, timeout_err,
+};
+use crate::domain::SessionError;
 use crate::modules::tutor::prompts::TutorPrompt;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
@@ -10,7 +13,10 @@ use tokio::net::TcpStream;
 
 const OLLAMA_CONNECT_TIMEOUT_SECS: u64 = 1;
 const OLLAMA_PROBE_TIMEOUT_SECS: u64 = 2;
-pub(crate) const OLLAMA_GENERATE_TIMEOUT_SECS: u64 = 60;
+pub(crate) const OLLAMA_GENERATE_TIMEOUT_SECS: u64 = 90;
+pub(crate) const OLLAMA_KEEP_ALIVE: &str = "10m";
+pub(crate) const OLLAMA_NUM_CTX: u32 = 2048;
+pub(crate) const OLLAMA_NUM_PREDICT: u32 = 384;
 
 #[derive(Deserialize)]
 struct OllamaTagsResponse {
@@ -32,18 +38,30 @@ pub(crate) struct OllamaModelDescriptor {
 }
 
 #[derive(Serialize)]
+pub(crate) struct OllamaOptions {
+    pub num_ctx: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub num_predict: Option<u32>,
+}
+
+#[derive(Serialize)]
 struct OllamaGenerateRequest<'a> {
     model: &'a str,
     system: &'a str,
     prompt: &'a str,
     stream: bool,
+    keep_alive: &'static str,
+    options: OllamaOptions,
     #[serde(skip_serializing_if = "Option::is_none")]
     think: Option<bool>,
 }
 
 #[derive(Deserialize)]
 struct OllamaGenerateResponse {
+    #[serde(default)]
     response: String,
+    #[serde(default)]
+    error: Option<String>,
 }
 
 /// Lists installed models from local `ollama serve` via `GET /api/tags` (`T031`).
@@ -93,6 +111,14 @@ pub(crate) async fn generate_completion(
     .await?;
     let parsed: OllamaGenerateResponse =
         serde_json::from_str(&body).map_err(|e| parse_err(e.to_string()))?;
+    if let Some(err) = parsed
+        .error
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        return Err(ollama_service_err(err));
+    }
     Ok(parsed.response)
 }
 
@@ -113,12 +139,17 @@ pub(crate) fn serialize_generate_request_with_stream(
         system: prompt.system_instruction(),
         prompt: prompt.user_prompt(),
         stream,
+        keep_alive: OLLAMA_KEEP_ALIVE,
+        options: OllamaOptions {
+            num_ctx: OLLAMA_NUM_CTX,
+            num_predict: Some(OLLAMA_NUM_PREDICT),
+        },
         think: cfg.disable_thinking().then_some(false),
     };
     serde_json::to_string(&req).map_err(|e| parse_err(e.to_string()))
 }
 
-async fn send_http_request(
+pub(crate) async fn send_http_request(
     cfg: &OllamaConfig,
     method: &str,
     path: &str,
@@ -158,31 +189,4 @@ pub(crate) async fn connect_with_timeout(addr: &str) -> Result<TcpStream, Sessio
     .await
     .map_err(|_| timeout_err())?
     .map_err(io_err)
-}
-
-pub(crate) fn timeout_err() -> SessionError {
-    SessionError::new(
-        SessionErrorKind::AiProviderUnavailable,
-        "Timed out waiting for local Ollama service.",
-        true,
-        None,
-    )
-}
-
-pub(crate) fn io_err(err: std::io::Error) -> SessionError {
-    SessionError::new(
-        SessionErrorKind::AiProviderUnavailable,
-        "Could not connect to local Ollama service on localhost.",
-        true,
-        Some(err.to_string()),
-    )
-}
-
-pub(crate) fn parse_err(detail: String) -> SessionError {
-    SessionError::new(
-        SessionErrorKind::AiInferenceFailed,
-        "Unreadable response from local Ollama service.",
-        true,
-        Some(detail),
-    )
 }

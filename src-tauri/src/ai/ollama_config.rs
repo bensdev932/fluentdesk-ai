@@ -87,7 +87,16 @@ fn validate_model_name(raw_model: String) -> Result<String, SessionError> {
 
 fn is_thinking_model_name(name: &str) -> bool {
     let lower = name.to_ascii_lowercase();
-    lower.contains("qwen3") || lower.contains("deepseek-r1") || lower.contains("qwq")
+    [
+        "qwen3",
+        "deepseek-r1",
+        "qwq",
+        "gpt-oss",
+        "magistral",
+        "cogito",
+    ]
+    .iter()
+    .any(|pat| lower.contains(pat))
 }
 
 fn config_err(reason: &str) -> SessionError {

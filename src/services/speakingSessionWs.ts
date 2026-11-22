@@ -24,8 +24,8 @@ export type WsServerMessage =
     } & Partial<ScaffoldProgress>)
   | { type: 'user_transcript'; sessionId: SessionId; turn: ConversationTurn; confidence?: number }
   | { type: 'sentence'; sessionId: SessionId; turnId: string; text: string }
-  | ({ type: 'turn_complete'; sessionId: SessionId } & SessionTurnHttpResponse)
-  | { type: 'error'; sessionId: SessionId; error: string; kind?: SessionErrorKind; recoverable?: boolean };
+  | ({ type: 'turn_complete'; sessionId: SessionId; turnId?: string } & SessionTurnHttpResponse)
+  | { type: 'error'; sessionId: SessionId; turnId?: string; error: string; kind?: SessionErrorKind; recoverable?: boolean };
 
 export type WsTurnResult = ApiJsonResult<SessionTurnHttpResponse> & { hadSentences?: boolean };
 
@@ -80,21 +80,26 @@ function createWsHandle(ws: WebSocket, onUnsolicited: (msg: WsServerMessage) => 
   const OPEN = 1;
   const CLOSED = 3;
   let closed = false;
+  let turnSeq = 0;
   let readyWaiters: Array<(ok: boolean) => void> = [];
-  let activeTurn: { onSentence: (s: string) => void; hadSentences: boolean; resolve: (r: WsTurnResult) => void } | null = null;
-
-  const flushReady = (ok: boolean): void => {
-    const waiters = readyWaiters;
-    readyWaiters = [];
-    waiters.forEach((fn) => fn(ok));
+  const abandonedTurns = new Set<string>();
+  let activeTurn: { turnId: string; seenTurnId?: string; onSentence: (s: string) => void; hadSentences: boolean; resolve: (r: WsTurnResult) => void } | null = null;
+  const abandonTurn = (t: { turnId: string; seenTurnId?: string }): void => {
+    for (const id of [t.turnId, t.seenTurnId]) {
+      if (!id) continue;
+      abandonedTurns.add(id);
+      if (abandonedTurns.size > 16) {
+        const oldest = abandonedTurns.values().next().value;
+        if (oldest) abandonedTurns.delete(oldest);
+      }
+    }
   };
-
+  const flushReady = (ok: boolean): void => { const w = readyWaiters; readyWaiters = []; w.forEach((fn) => fn(ok)); };
   const failActive = (message: string): void => {
     if (!activeTurn) return;
     const t = activeTurn;
     activeTurn = null;
-    if (t.hadSentences) t.resolve({ ok: false, unreachable: false, status: 502, hadSentences: true, message });
-    else t.resolve({ ok: false, unreachable: true, hadSentences: false, message });
+    t.resolve(t.hadSentences ? { ok: false, unreachable: false, status: 502, hadSentences: true, message } : { ok: false, unreachable: true, hadSentences: false, message });
   };
 
   ws.onopen = () => flushReady(true);
@@ -104,23 +109,20 @@ function createWsHandle(ws: WebSocket, onUnsolicited: (msg: WsServerMessage) => 
     if (typeof ev.data !== 'string') return;
     let msg: WsServerMessage;
     try { msg = JSON.parse(ev.data) as WsServerMessage; } catch { return; }
+    const msgTurnId = 'turnId' in msg ? msg.turnId : undefined;
+    if (msgTurnId && abandonedTurns.has(msgTurnId)) return;
     if (activeTurn) {
       if (msg.type === 'sentence') {
+        activeTurn.seenTurnId = msg.turnId;
         activeTurn.hadSentences = true;
         activeTurn.onSentence(msg.text);
         return;
       }
-      if (msg.type === 'turn_complete') {
-        const t = activeTurn;
-        activeTurn = null;
-        t.resolve({ ok: true, data: msg });
-        return;
-      }
+      if (msg.type === 'turn_complete') { const t = activeTurn; activeTurn = null; t.resolve({ ok: true, data: msg }); return; }
       if (msg.type === 'error') {
-        const t = activeTurn;
-        activeTurn = null;
-        t.resolve({ ok: false, unreachable: false, status: 400, hadSentences: t.hadSentences, message: msg.error });
-        return;
+        const t = activeTurn; activeTurn = null;
+        const status = msg.kind === 'AiProviderUnavailable' ? 503 : msg.kind === 'AiInferenceFailed' ? 502 : msg.kind === 'PersistenceFailed' ? 500 : 400;
+        t.resolve({ ok: false, unreachable: false, status, hadSentences: t.hadSentences, message: msg.error }); return;
       }
       if (msg.type === 'state_changed' && (msg.state === 'Ended' || msg.state === 'Error')) {
         const t = activeTurn;
@@ -143,12 +145,7 @@ function createWsHandle(ws: WebSocket, onUnsolicited: (msg: WsServerMessage) => 
       if (closed || ws.readyState === CLOSED || signal.aborted) return Promise.resolve(false);
       if (ws.readyState === OPEN) return Promise.resolve(true);
       return new Promise<boolean>((res) => {
-        const done = (ok: boolean): void => {
-          clearTimeout(timer);
-          signal.removeEventListener('abort', onAbort);
-          readyWaiters = readyWaiters.filter((fn) => fn !== done);
-          res(ok);
-        };
+        const done = (ok: boolean): void => { clearTimeout(timer); signal.removeEventListener('abort', onAbort); readyWaiters = readyWaiters.filter((fn) => fn !== done); res(ok); };
         const onAbort = (): void => done(false);
         const timer = setTimeout(() => done(ws.readyState === OPEN), timeoutMs);
         signal.addEventListener('abort', onAbort, { once: true });
@@ -156,7 +153,8 @@ function createWsHandle(ws: WebSocket, onUnsolicited: (msg: WsServerMessage) => 
       });
     },
     runTextTurn: (body, opts) => {
-      if (!sendJson({ type: 'start_turn', ...body })) {
+      const turnId = `ws-c-${++turnSeq}`;
+      if (!sendJson({ type: 'start_turn', turnId, ...body })) {
         return Promise.resolve({ ok: false, unreachable: true, hadSentences: false, message: 'WebSocket not open.' });
       }
       const bargeInFrame = (p?: SpeechPlaybackProgress) =>
@@ -167,6 +165,7 @@ function createWsHandle(ws: WebSocket, onUnsolicited: (msg: WsServerMessage) => 
           if (!activeTurn) return;
           const t = activeTurn;
           activeTurn = null;
+          abandonTurn(t);
           sendJson(bargeInFrame(opts.getSpeechProgress?.()));
           cleanup();
           resolve({ ok: false, unreachable: false, status: 499, hadSentences: t.hadSentences, message: 'Turn aborted.' });
@@ -175,13 +174,13 @@ function createWsHandle(ws: WebSocket, onUnsolicited: (msg: WsServerMessage) => 
           if (!activeTurn) return;
           const t = activeTurn;
           activeTurn = null;
+          abandonTurn(t);
           sendJson({ type: 'barge_in' });
           cleanup();
-          if (t.hadSentences) resolve({ ok: false, unreachable: false, status: 504, hadSentences: true, message: 'WebSocket turn timed out.' });
-          else resolve({ ok: false, unreachable: true, hadSentences: false, message: 'WebSocket turn timed out.' });
+          resolve({ ok: false, unreachable: false, status: 504, hadSentences: t.hadSentences, message: 'AI model timed out. Check your selected provider or retry.' });
         }, opts.timeoutMs);
         opts.signal.addEventListener('abort', onAbort, { once: true });
-        activeTurn = { onSentence: opts.onSentence, hadSentences: false, resolve: (r) => { cleanup(); resolve(r); } };
+        activeTurn = { turnId, onSentence: opts.onSentence, hadSentences: false, resolve: (r) => { cleanup(); resolve(r); } };
       });
     },
     sendAudioFrame: (pcm) => {

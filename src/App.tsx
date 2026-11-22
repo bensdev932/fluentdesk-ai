@@ -1,4 +1,5 @@
 import React from 'react';
+import { DesktopUpdateBar } from './components/DesktopUpdateBar';
 import { SpeakingRoom } from './components/SpeakingRoom';
 import { isTauriRuntime, type SpeakingSessionPort } from './services/tauriService';
 
@@ -17,9 +18,12 @@ export function App({ sessionClient }: AppProps): React.JSX.Element {
             <p className="brand-subtitle">Voice-First English Speaking Studio</p>
           </div>
         </div>
-        <span className="local-engine-pill">
-          {isTauriRuntime() ? 'Local Engine · Private by Default' : 'Browser Studio · Web Speech & Local LLM'}
-        </span>
+        <div className="header-meta">
+          <DesktopUpdateBar />
+          <span className="local-engine-pill">
+            {isTauriRuntime() ? 'Local Engine · Private by Default' : 'Browser Studio · Web Speech & Local LLM'}
+          </span>
+        </div>
       </header>
       <SpeakingRoom sessionClient={sessionClient} />
     </main>

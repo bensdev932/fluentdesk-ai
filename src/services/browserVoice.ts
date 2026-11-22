@@ -1,14 +1,9 @@
-import { ENGLISH_VOICE_PRESETS, sanitizeUntrustedText } from '../types/domain';
+import { ENGLISH_VOICE_PRESETS } from '../types/domain';
+export { startBrowserSpeechRecognition, type SpeechRecognitionCallbacks } from './browserSpeechRec';
 
 export interface MicCaptureHandle {
   stop(): void;
   reason?: string;
-}
-
-export interface SpeechRecognitionCallbacks {
-  onInterim(text: string): void;
-  onFinal(text: string, confidence: number): void;
-  onStatus(note: string): void;
 }
 
 export interface EnglishVoiceOption {
@@ -21,17 +16,6 @@ export interface SpeakUtteranceOptions {
   rate?: number;
   englishVoiceId?: string;
 }
-
-type SpeechRecCtor = new () => {
-  lang: string;
-  continuous: boolean;
-  interimResults: boolean;
-  onresult: ((event: { resultIndex: number; results: ArrayLike<{ isFinal: boolean; 0: { transcript: string; confidence?: number } }> }) => void) | null;
-  onerror: ((event: { error?: string }) => void) | null;
-  onend: (() => void) | null;
-  start(): void;
-  stop(): void;
-};
 
 export async function startBrowserMicCapture(onLevel: (level: number) => void): Promise<MicCaptureHandle> {
   if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
@@ -87,52 +71,6 @@ export async function startBrowserMicCapture(onLevel: (level: number) => void): 
   } catch {
     return { stop: () => {}, reason: 'Microphone permission unavailable — use text input or Speak Sample Turn.' };
   }
-}
-
-export function startBrowserSpeechRecognition(cb: SpeechRecognitionCallbacks): () => void {
-  const g = globalThis as unknown as { SpeechRecognition?: SpeechRecCtor; webkitSpeechRecognition?: SpeechRecCtor };
-  const Ctor = g.SpeechRecognition || g.webkitSpeechRecognition;
-  if (!Ctor) {
-    cb.onStatus('Voice recognition unavailable in this browser — use text input or Speak Sample Turn.');
-    return () => {};
-  }
-  let active = true;
-  const rec = new Ctor();
-  rec.lang = 'en-US';
-  rec.continuous = true;
-  rec.interimResults = true;
-  rec.onresult = (event) => {
-    if (!active) return;
-    let interim = '';
-    for (let i = event.resultIndex; i < event.results.length; i += 1) {
-      const res = event.results[i];
-      const text = sanitizeUntrustedText(res[0]?.transcript ?? '');
-      if (!text) continue;
-      if (res.isFinal) cb.onFinal(text, res[0]?.confidence ?? 0.94);
-      else interim = `${interim} ${text}`.trim();
-    }
-    if (interim && active) cb.onInterim(interim);
-  };
-  rec.onerror = (event) => {
-    if (!active) return;
-    if (event.error && event.error !== 'no-speech' && event.error !== 'aborted') {
-      cb.onStatus(`Mic STT note (${event.error}) — you can also type or click Speak Sample Turn.`);
-    }
-  };
-  rec.onend = () => {
-    if (!active) return;
-    try { rec.start(); } catch { /* ignore */ }
-  };
-  try {
-    rec.start();
-    cb.onStatus('Browser voice recognition active — speak into your microphone.');
-  } catch {
-    cb.onStatus('Ready — speak into your microphone or use the turn input bar.');
-  }
-  return () => {
-    active = false;
-    try { rec.stop(); } catch { /* ignore */ }
-  };
 }
 
 export function normalizeForSpeech(text: string): string {

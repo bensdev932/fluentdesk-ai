@@ -15,6 +15,7 @@ mod ws_events;
 mod ws_handler;
 mod ws_origin;
 mod ws_protocol;
+mod ws_turn_events;
 mod ws_turns;
 
 #[cfg(test)]
@@ -36,6 +37,8 @@ mod tests_sessions;
 #[cfg(test)]
 mod tests_sessions_persistence;
 #[cfg(test)]
+mod tests_sse_recovery;
+#[cfg(test)]
 mod tests_stream;
 #[cfg(test)]
 mod tests_ws;
@@ -43,6 +46,8 @@ mod tests_ws;
 mod tests_ws_audio;
 #[cfg(test)]
 mod tests_ws_edge;
+#[cfg(test)]
+mod tests_ws_resilience;
 
 pub use bridge::{bind_default_bridge, bind_desktop_bridge, run_default_bridge};
 

@@ -53,6 +53,8 @@ pub(super) enum WsServerEvent {
     Error {
         #[serde(rename = "sessionId")]
         session_id: SessionId,
+        #[serde(rename = "turnId", skip_serializing_if = "Option::is_none")]
+        turn_id: Option<String>,
         error: String,
         #[serde(skip_serializing_if = "Option::is_none")]
         kind: Option<SessionErrorKind>,
@@ -63,6 +65,8 @@ pub(super) enum WsServerEvent {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(super) struct WsTurnCompletePayload {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub turn_id: Option<String>,
     pub user_turn: ConversationTurn,
     pub tutor_turn: ConversationTurn,
     pub reply: TutorReply,
@@ -107,20 +111,30 @@ impl WsServerEvent {
     }
 
     pub(super) fn from_error(sid: &SessionId, err: &SessionError) -> Self {
+        Self::from_error_for_turn(sid, err, None)
+    }
+
+    pub(super) fn from_error_for_turn(
+        sid: &SessionId,
+        err: &SessionError,
+        turn_id: Option<String>,
+    ) -> Self {
         Self::Error {
             session_id: sid.clone(),
+            turn_id,
             error: redact_sensitive_log_text(&err.user_message),
             kind: Some(err.kind),
             recoverable: err.recoverable,
         }
     }
 
-    pub(super) fn from_text_outcome(outcome: TextTurnOutcome) -> Self {
+    pub(super) fn from_text_outcome(outcome: TextTurnOutcome, turn_id: Option<String>) -> Self {
         let sid = outcome.session_id.clone();
         let r = SessionTurnHttpResponse::from_outcome(outcome);
         Self::TurnComplete {
             session_id: sid,
             payload: Box::new(WsTurnCompletePayload {
+                turn_id,
                 user_turn: r.user_turn,
                 tutor_turn: r.tutor_turn,
                 reply: r.reply,
@@ -139,6 +153,7 @@ impl WsServerEvent {
         Self::TurnComplete {
             session_id: snap.session_id.clone(),
             payload: Box::new(WsTurnCompletePayload {
+                turn_id: None,
                 user_turn: ev.user_turn,
                 tutor_turn: ev.tutor_turn,
                 reply: ev.reply,

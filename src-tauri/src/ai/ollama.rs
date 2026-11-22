@@ -51,6 +51,10 @@ impl OllamaAiProvider {
     ) -> Result<String, SessionError> {
         match ollama_http::generate_completion(&self.config, prompt).await {
             Ok(raw) => Ok(raw),
+            Err(err) if is_http_400(&err) && self.config.disable_thinking() => {
+                let plain = self.config.clone().with_disable_thinking(false);
+                ollama_http::generate_completion(&plain, prompt).await
+            }
             Err(err) if is_http_404(&err) => self.retry_with_discovered_model(prompt, err).await,
             Err(err) => Err(err),
         }
@@ -75,6 +79,10 @@ impl OllamaAiProvider {
     ) -> Result<TutorReplyStream, SessionError> {
         match stream_ollama_completion(&self.config, prompt, mode).await {
             Ok(rx) => Ok(rx),
+            Err(err) if is_http_400(&err) && self.config.disable_thinking() => {
+                let plain = self.config.clone().with_disable_thinking(false);
+                stream_ollama_completion(&plain, prompt, mode).await
+            }
             Err(err) if is_http_404(&err) => {
                 let discovered = ollama_discovery::discover_local_provider(&self.config).await?;
                 if discovered.config().model_name() == self.config.model_name() {
@@ -85,6 +93,10 @@ impl OllamaAiProvider {
             Err(err) => Err(err),
         }
     }
+}
+
+fn is_http_400(err: &SessionError) -> bool {
+    err.internal_detail.as_deref() == Some("HTTP 400")
 }
 
 fn is_http_404(err: &SessionError) -> bool {

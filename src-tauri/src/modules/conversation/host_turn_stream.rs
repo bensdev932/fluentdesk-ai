@@ -25,7 +25,7 @@ impl SpeakingSessionHost {
         now_unix_ms: i64,
         sentence_tx: mpsc::Sender<String>,
     ) -> Result<TextTurnOutcome, SessionError> {
-        let mut prep = self
+        let prep = self
             .prepare_thinking_turn(
                 session_id,
                 transcript,
@@ -35,6 +35,35 @@ impl SpeakingSessionHost {
                 None,
             )
             .await?;
+        self.run_prepared_text_turn_stream(session_id, prep, transcript, now_unix_ms, sentence_tx)
+            .await
+    }
+
+    /// Cancels any stale in-flight turn on `session_id` before running a non-streaming text turn.
+    pub async fn submit_replaceable_text_turn(
+        &self,
+        session_id: &SessionId,
+        transcript: &Transcript,
+        correction_mode: Option<CorrectionMode>,
+        now_unix_ms: i64,
+    ) -> Result<TextTurnOutcome, SessionError> {
+        let prep = self
+            .prepare_replaceable_text_turn(session_id, transcript, correction_mode, now_unix_ms)
+            .await?;
+        let (tx, rx) = mpsc::channel(1);
+        drop(rx);
+        self.run_prepared_text_turn_stream(session_id, prep, transcript, now_unix_ms, tx)
+            .await
+    }
+
+    pub(crate) async fn run_prepared_text_turn_stream(
+        &self,
+        session_id: &SessionId,
+        mut prep: PreparedThinking,
+        transcript: &Transcript,
+        now_unix_ms: i64,
+        sentence_tx: mpsc::Sender<String>,
+    ) -> Result<TextTurnOutcome, SessionError> {
         let llm_started = Instant::now();
         let stream_res = open_turn_stream(&mut prep, transcript).await;
         let res = drain_turn_stream(stream_res, sentence_tx, &mut prep.cancel).await;

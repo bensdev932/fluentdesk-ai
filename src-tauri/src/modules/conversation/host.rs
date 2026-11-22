@@ -32,6 +32,7 @@ pub struct SpeakingSessionHost {
     pub(crate) speaking_speed: SpeakingSpeed,
     pub(crate) has_speed_override: bool,
     pub(crate) active: Arc<Mutex<Option<SessionManager>>>,
+    pub(crate) turn_gen: AtomicU64,
     session_seq: AtomicU64,
 }
 
@@ -47,6 +48,7 @@ impl SpeakingSessionHost {
             speaking_speed: SpeakingSpeed::try_new(1.0).expect("valid speed"),
             has_speed_override: false,
             active: Arc::new(Mutex::new(None)),
+            turn_gen: AtomicU64::new(0),
             session_seq: AtomicU64::new(1),
         }
     }
@@ -139,7 +141,10 @@ impl SpeakingSessionHost {
     pub async fn cancel_active_turn(&self, session_id: &SessionId) -> bool {
         let mut guard = self.active.lock().await;
         match guard.as_mut().filter(|m| m.session_id() == session_id) {
-            Some(mgr) => cancel_mgr_turn(mgr).await,
+            Some(mgr) => {
+                self.next_turn_gen();
+                cancel_mgr_turn(mgr).await
+            }
             None => false,
         }
     }

@@ -1,4 +1,4 @@
-import { readErrorDetail, withTimeoutSignal, type ApiJsonResult } from './apiTransport';
+import { readJsonErrorDetail, withTimeoutSignal, type ApiJsonResult } from './apiTransport';
 import { buildClientHeaders } from './clientIdentity';
 import type { SessionTurnHttpResponse } from './speakingSessionCodec';
 
@@ -71,6 +71,11 @@ export async function postTurnWithOptionalSse(
   opts: { signal: AbortSignal; timeoutMs: number; onSentence: (sentence: string) => void },
 ): Promise<ApiJsonResult<SessionTurnHttpResponse>> {
   const { signal, cleanup } = withTimeoutSignal(opts.signal, opts.timeoutMs);
+  let hadSentences = false;
+  const onSentence = (s: string): void => {
+    hadSentences = true;
+    opts.onSentence(s);
+  };
   try {
     const res = await fetch(url, {
       method: 'POST',
@@ -82,16 +87,26 @@ export async function postTurnWithOptionalSse(
       signal,
     });
     if (!res.ok) {
-      return { ok: false, unreachable: res.status >= 500, status: res.status, message: await readErrorDetail(res) };
+      const jsonErr = await readJsonErrorDetail(res);
+      const bridgeJsonErr = (res.status === 500 || res.status === 502 || res.status === 503) && jsonErr !== null;
+      return {
+        ok: false,
+        unreachable: res.status >= 500 && !bridgeJsonErr,
+        status: res.status,
+        message: jsonErr ?? `HTTP ${res.status}`,
+      };
     }
     const contentType = res.headers.get('content-type')?.toLowerCase() ?? '';
     if (contentType.includes('text/event-stream') && res.body) {
-      return await consumeTurnSseStream(res.body, opts.onSentence);
+      return await consumeTurnSseStream(res.body, onSentence, () => hadSentences);
     }
     return { ok: true, data: (await res.json()) as SessionTurnHttpResponse };
   } catch (err) {
+    if (signal.aborted && !opts.signal.aborted) {
+      return { ok: false, unreachable: false, status: 504, message: 'AI model timed out. Check your selected provider or retry.' };
+    }
     const message = err instanceof Error && err.message ? err.message : 'network error';
-    return { ok: false, unreachable: true, message };
+    return { ok: false, unreachable: !hadSentences, ...(hadSentences ? { status: 502 } : {}), message };
   } finally {
     cleanup();
   }
@@ -100,42 +115,56 @@ export async function postTurnWithOptionalSse(
 async function consumeTurnSseStream(
   body: ReadableStream<Uint8Array>,
   onSentence: (sentence: string) => void,
+  hasSentences: () => boolean,
 ): Promise<ApiJsonResult<SessionTurnHttpResponse>> {
   const reader = body.getReader();
   const decoder = new TextDecoder();
   let buf = '';
   let donePayload: SessionTurnHttpResponse | null = null;
-  let streamError: string | null = null;
+  let streamError: { message: string; status: number } | null = null;
 
   const processFrame = (frame: string): void => {
     const parsed = parseSseFrame(frame);
     if (!parsed) return;
-    if (parsed.event === 'sentence') {
-      const obj = JSON.parse(parsed.data) as { text?: unknown };
-      if (typeof obj.text === 'string' && obj.text.trim()) onSentence(obj.text.trim());
-    } else if (parsed.event === 'done') {
-      donePayload = JSON.parse(parsed.data) as SessionTurnHttpResponse;
-    } else if (parsed.event === 'error') {
-      const obj = JSON.parse(parsed.data) as { error?: string; userMessage?: string };
-      streamError = obj.userMessage ?? obj.error ?? 'Tutor streaming failed.';
-    }
+    try {
+      if (parsed.event === 'sentence') {
+        const obj = JSON.parse(parsed.data) as { text?: unknown };
+        if (typeof obj.text === 'string' && obj.text.trim()) onSentence(obj.text.trim());
+      } else if (parsed.event === 'done') {
+        donePayload = JSON.parse(parsed.data) as SessionTurnHttpResponse;
+      } else if (parsed.event === 'error') {
+        const obj = JSON.parse(parsed.data) as { error?: string; userMessage?: string; status?: unknown };
+        const status = typeof obj.status === 'number' ? obj.status : 502;
+        streamError = { message: obj.userMessage ?? obj.error ?? 'Tutor streaming failed.', status };
+      }
+    } catch { /* ignore malformed SSE payload */ }
   };
 
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buf += decoder.decode(value, { stream: true }).replace(/\r\n/g, '\n');
+  const appendDecoded = (chunk: string): void => {
+    if (!chunk) return;
+    buf = (buf + chunk).replace(/\r\n/g, '\n');
     let split = buf.indexOf('\n\n');
     while (split >= 0) {
       processFrame(buf.slice(0, split));
       buf = buf.slice(split + 2);
       split = buf.indexOf('\n\n');
     }
+  };
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    appendDecoded(decoder.decode(value, { stream: true }));
   }
+  appendDecoded(decoder.decode());
   if (buf.trim()) processFrame(buf);
-  if (streamError) return { ok: false, unreachable: false, status: 502, message: streamError };
+  if (streamError) {
+    const err: { message: string; status: number } = streamError;
+    return { ok: false, unreachable: false, status: err.status, message: err.message };
+  }
   if (donePayload) return { ok: true, data: donePayload };
-  return { ok: false, unreachable: true, message: 'SSE turn stream ended before completion.' };
+  const streamed = hasSentences();
+  return { ok: false, unreachable: !streamed, ...(streamed ? { status: 502 } : {}), message: 'SSE turn stream ended before completion.' };
 }
 
 function parseSseFrame(raw: string): { event: string; data: string } | null {

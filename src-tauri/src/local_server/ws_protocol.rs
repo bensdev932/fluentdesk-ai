@@ -14,6 +14,8 @@ pub(super) enum WsClientCommand {
         user_text: Option<String>,
         #[serde(default, alias = "correctionMode")]
         correction_mode: Option<CorrectionMode>,
+        #[serde(default, alias = "turnId")]
+        turn_id: Option<String>,
     },
     #[serde(alias = "AudioFormat")]
     AudioFormat(WsAudioFormatPayload),

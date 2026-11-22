@@ -98,6 +98,9 @@ async fn ep_tutor_reply(State(s): State<BridgeState>, body: Bytes) -> Response {
     handle_tutor_reply(&body, &s.router).await.into_response()
 }
 async fn ep_start_session(State(s): State<BridgeState>, body: Bytes) -> Response {
+    if s.router.has_persistence() {
+        s.router.spawn_local_warmup_if_needed();
+    }
     handle_start_session(&body, &s.host).await.into_response()
 }
 async fn ep_list_sessions(State(s): State<BridgeState>) -> Response {
@@ -134,7 +137,7 @@ async fn ep_session_turn(
     if accepts_sse(&headers) {
         return handle_turn_sse_stream(&id, &body, s.host).await;
     }
-    handle_session_turn(&id, &body, &s.host)
+    handle_session_turn(&id, &body, s.host)
         .await
         .into_response()
 }

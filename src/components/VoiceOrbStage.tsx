@@ -11,11 +11,11 @@ export interface VoiceOrbStageProps {
 }
 
 export function VoiceOrbStage(p: VoiceOrbStageProps): React.JSX.Element | null {
-  if (p.state === 'Speaking') {
+  if (p.state === 'Thinking' || p.state === 'Speaking') {
     return (
       <div className="voice-orb-action-bar">
         <button type="button" className="btn-accent" onClick={p.onBargeIn}>
-          Interrupt Tutor &amp; Speak Now
+          {p.state === 'Thinking' ? 'Cancel & Retry' : 'Interrupt Tutor & Speak Now'}
         </button>
       </div>
     );

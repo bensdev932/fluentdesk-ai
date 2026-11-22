@@ -1,11 +1,15 @@
 //! Pooled `reqwest` outbound SSE streaming transport for cloud AI adapters.
 
 use crate::ai::cloud_http::{
-    build_reqwest, err_status, map_reqwest_err, CloudHttpError, CloudHttpRequest,
+    build_reqwest, err_status, map_reqwest_err, net_err, CloudHttpError, CloudHttpRequest,
 };
 use reqwest::Response;
 use std::ops::ControlFlow;
+use std::time::Duration;
 use tokio::sync::mpsc;
+
+const SSE_CHUNK_IDLE_TIMEOUT_SECS: u64 = 15;
+const SSE_MIN_TOTAL_TIMEOUT_SECS: u64 = 30;
 
 pub(crate) type SseLineStream = mpsc::Receiver<Result<String, CloudHttpError>>;
 
@@ -13,19 +17,29 @@ pub(crate) type SseLineStream = mpsc::Receiver<Result<String, CloudHttpError>>;
 pub(crate) async fn post_sse_stream(
     req: CloudHttpRequest,
 ) -> Result<SseLineStream, CloudHttpError> {
-    let (client, request) = build_reqwest(req, 15)?;
-    let resp = client.execute(request).await.map_err(map_reqwest_err)?;
-    open_sse_receiver(resp).await
+    post_sse_stream_with_idle(req, Duration::from_secs(SSE_CHUNK_IDLE_TIMEOUT_SECS)).await
 }
 
-async fn open_sse_receiver(resp: Response) -> Result<SseLineStream, CloudHttpError> {
+pub(crate) async fn post_sse_stream_with_idle(
+    req: CloudHttpRequest,
+    idle_timeout: Duration,
+) -> Result<SseLineStream, CloudHttpError> {
+    let (client, request) = build_reqwest(req, SSE_MIN_TOTAL_TIMEOUT_SECS)?;
+    let resp = client.execute(request).await.map_err(map_reqwest_err)?;
+    open_sse_receiver(resp, idle_timeout).await
+}
+
+async fn open_sse_receiver(
+    resp: Response,
+    idle_timeout: Duration,
+) -> Result<SseLineStream, CloudHttpError> {
     let status = resp.status().as_u16();
     if !(200..=299).contains(&status) {
         let body = read_error_snippet(resp).await;
         return Err(err_status(status, &body));
     }
     let (line_tx, line_rx) = mpsc::channel(32);
-    tokio::spawn(async move { pump_sse_chunks(resp, line_tx).await });
+    tokio::spawn(async move { pump_sse_chunks(resp, line_tx, idle_timeout).await });
     Ok(line_rx)
 }
 
@@ -43,15 +57,22 @@ async fn read_error_snippet(mut resp: Response) -> String {
 async fn pump_sse_chunks(
     mut resp: Response,
     line_tx: mpsc::Sender<Result<String, CloudHttpError>>,
+    idle_timeout: Duration,
 ) {
     let mut buf = Vec::new();
     loop {
-        match resp.chunk().await {
-            Ok(Some(c)) if step_chunk(&c, &mut buf, &line_tx).await => {}
-            Ok(Some(_)) => return,
-            Ok(None) => return flush_eof_tail(&buf, &line_tx).await,
-            Err(e) => {
+        match tokio::time::timeout(idle_timeout, resp.chunk()).await {
+            Ok(Ok(Some(c))) if step_chunk(&c, &mut buf, &line_tx).await => {}
+            Ok(Ok(Some(_))) => return,
+            Ok(Ok(None)) => return flush_eof_tail(&buf, &line_tx).await,
+            Ok(Err(e)) => {
                 let _ = line_tx.send(Err(map_reqwest_err(e))).await;
+                return;
+            }
+            Err(_) => {
+                let _ = line_tx
+                    .send(Err(net_err("SSE stream stalled waiting for data.")))
+                    .await;
                 return;
             }
         }

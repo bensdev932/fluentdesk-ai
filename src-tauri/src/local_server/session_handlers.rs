@@ -8,6 +8,7 @@ use crate::local_server::session_dto::{
     SessionTurnHttpRequest, SessionTurnHttpResponse, StartSessionHttpRequest,
 };
 use crate::modules::conversation::{SpeakingSessionHost, StartSpeakingSessionConfig};
+use std::sync::Arc;
 
 pub(super) enum LifecycleOp {
     Pause,
@@ -69,18 +70,53 @@ pub(super) async fn handle_get_session(raw_id: &str, host: &SpeakingSessionHost)
 pub(super) async fn handle_session_turn(
     raw_id: &str,
     body: &[u8],
-    host: &SpeakingSessionHost,
+    host: Arc<SpeakingSessionHost>,
 ) -> HttpResponse {
     let (sid, tx, mode) = match parse_turn_input(raw_id, body) {
         Ok(parsed) => parsed,
         Err(resp) => return resp,
     };
-    match host
-        .submit_text_turn(&sid, &tx, mode, current_unix_ms())
+    let now_ms = current_unix_ms();
+    let prep = match host
+        .prepare_replaceable_text_turn(&sid, &tx, mode, now_ms)
         .await
     {
+        Ok(prep) => prep,
+        Err(err) => return map_session_http_error(&err),
+    };
+    let mut guard = RestTurnGuard {
+        host: Arc::clone(&host),
+        sid: sid.clone(),
+        turn_gen: prep.turn_gen,
+        completed: false,
+    };
+    let (sent_tx, sent_rx) = tokio::sync::mpsc::channel(1);
+    drop(sent_rx);
+    let res = host
+        .run_prepared_text_turn_stream(&sid, prep, &tx, now_ms, sent_tx)
+        .await;
+    guard.completed = true;
+    match res {
         Ok(outcome) => json_response(200, "OK", &SessionTurnHttpResponse::from_outcome(outcome)),
         Err(err) => map_session_http_error(&err),
+    }
+}
+
+struct RestTurnGuard {
+    host: Arc<SpeakingSessionHost>,
+    sid: SessionId,
+    turn_gen: u64,
+    completed: bool,
+}
+
+impl Drop for RestTurnGuard {
+    fn drop(&mut self) {
+        if !self.completed {
+            let (host, sid, turn_gen) = (Arc::clone(&self.host), self.sid.clone(), self.turn_gen);
+            tokio::spawn(async move {
+                host.cancel_turn_if_gen(&sid, turn_gen).await;
+            });
+        }
     }
 }
 

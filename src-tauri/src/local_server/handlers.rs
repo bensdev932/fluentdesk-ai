@@ -45,12 +45,23 @@ pub(super) async fn handle_patch_preferences(
         Err(err) => return map_preferences_error(&err),
     };
     router.sync_preferences(&updated);
+    if router.has_persistence() {
+        router.spawn_local_warmup_forced();
+    }
     host.apply_preferences_to_active(&updated).await;
     json_response(200, "OK", &updated)
 }
 
 pub(super) async fn handle_list_providers(router: &TutorRouter) -> HttpResponse {
     let mut snapshot = router.providers_snapshot().await;
+    if router.has_persistence()
+        && snapshot
+            .providers
+            .iter()
+            .any(|p| p.id == crate::ai::catalog::ProviderId::Ollama && p.available)
+    {
+        router.spawn_local_warmup_if_needed();
+    }
     for provider in &mut snapshot.providers {
         provider.status_detail = provider
             .status_detail

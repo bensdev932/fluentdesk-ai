@@ -4,7 +4,8 @@
 use crate::ai::{
     catalog::{ProviderId, ProviderPreference},
     ollama::OllamaConfig,
-    router_exec::{build_candidate_list, execute_candidates, DispatchEnv, TurnInput},
+    ollama_warmup::WarmupTracker,
+    router_exec::{execute_candidates, TurnInput},
     router_health::{build_providers_snapshot, evaluate_overall_health},
     router_types::{
         CircuitBreakers, ProvidersSnapshot, RoutedTutorReply, RouterConfigPatch, RouterHealthView,
@@ -16,10 +17,7 @@ use crate::database::repository::SessionRepository;
 use crate::domain::{ConversationTurn, CorrectionMode, SessionError, Transcript};
 use crate::preferences::LearnerPreferencesStore;
 use std::path::PathBuf;
-use std::sync::{
-    atomic::{AtomicUsize, Ordering},
-    Arc, Mutex, RwLock,
-};
+use std::sync::{atomic::AtomicUsize, Arc, Mutex, RwLock};
 
 #[derive(Clone)]
 pub struct TutorRouter {
@@ -28,6 +26,7 @@ pub struct TutorRouter {
     pub(crate) state: Arc<RwLock<RouterState>>,
     pub(crate) breakers: Arc<Mutex<CircuitBreakers>>,
     pub(crate) rr_cursor: Arc<AtomicUsize>,
+    pub(crate) warmup_tracker: Arc<Mutex<WarmupTracker>>,
     prefs_store: Option<LearnerPreferencesStore>,
 }
 
@@ -67,6 +66,7 @@ impl TutorRouter {
             state: Arc::new(RwLock::new(state)),
             breakers: Arc::new(Mutex::new(CircuitBreakers::default())),
             rr_cursor: Arc::new(AtomicUsize::new(0)),
+            warmup_tracker: Arc::new(Mutex::new(WarmupTracker::default())),
             prefs_store,
         }
     }
@@ -107,6 +107,7 @@ impl TutorRouter {
                 .write()
                 .expect("lock")
                 .sync_from_preferences(&updated);
+            self.spawn_local_warmup_forced();
         } else {
             self.state
                 .write()
@@ -157,37 +158,14 @@ impl TutorRouter {
         req_provider: Option<ProviderPreference>,
         req_model: Option<&str>,
     ) -> Result<RoutedTutorReply, SessionError> {
-        let st = self.load_routing_state().await?;
-        let effective = req_provider.unwrap_or(st.prefs.preferred_provider);
-        let cursor = self.rr_cursor.load(Ordering::Relaxed);
-        let cands = build_candidate_list(
-            effective,
-            st.prefs.cloud_opt_in,
-            cursor,
-            &self.secrets,
-            |id| self.breakers.lock().expect("lock").is_healthy(id),
-        )?;
-        let env = DispatchEnv {
-            ollama_base: &self.ollama_base,
-            endpoints: &st.endpoint_overrides,
-            overrides: &st.prefs.model_overrides,
-            secrets: &self.secrets,
-            breakers: &self.breakers,
-            rr_cursor: &self.rr_cursor,
-        };
+        let (st, cands, is_auto) = self.prepare_candidates(req_provider).await?;
+        let env = self.dispatch_env(&st);
         let turn = TurnInput {
             history,
             transcript,
             mode,
         };
-        execute_candidates(
-            &cands,
-            &env,
-            &turn,
-            req_model,
-            effective == ProviderPreference::Auto,
-        )
-        .await
+        execute_candidates(&cands, &env, &turn, req_model, is_auto).await
     }
 
     pub(crate) async fn load_routing_state(&self) -> Result<RouterState, SessionError> {

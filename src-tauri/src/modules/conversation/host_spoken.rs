@@ -19,59 +19,68 @@ use crate::modules::speech::{
     playback::AudioOutput, synthesis_stream::PlaybackProgress,
     transcription::UserTranscriptReadyEvent, utterance::CompletedUtterance,
 };
-use std::sync::{Arc, Mutex};
+use std::sync::{
+    atomic::{AtomicU64, Ordering},
+    Arc, Mutex,
+};
 use std::time::Instant;
 use tokio::sync::{mpsc, oneshot};
+
+pub(crate) struct SpokenTurnAck<'a> {
+    pub started_tx: oneshot::Sender<()>,
+    pub turn_gen: &'a AtomicU64,
+}
 
 impl SpeakingSessionHost {
     pub async fn process_spoken_utterance(
         &self,
-        session_id: &SessionId,
-        utterance: &CompletedUtterance,
-        now_unix_ms: i64,
+        sid: &SessionId,
+        utt: &CompletedUtterance,
+        now_ms: i64,
     ) -> Result<EndToEndTurnResult, SessionError> {
-        self.process_spoken_utterance_with_events(session_id, utterance, now_unix_ms, None)
+        self.run_spoken_turn_internal(sid, utt, now_ms, None, None)
             .await
     }
 
     pub async fn process_spoken_utterance_with_events(
         &self,
-        session_id: &SessionId,
-        utterance: &CompletedUtterance,
-        now_unix_ms: i64,
+        sid: &SessionId,
+        utt: &CompletedUtterance,
+        now_ms: i64,
         ev_tx: Option<mpsc::Sender<SpokenTurnEvent>>,
     ) -> Result<EndToEndTurnResult, SessionError> {
-        self.run_spoken_turn_internal(session_id, utterance, now_unix_ms, ev_tx, None)
+        self.run_spoken_turn_internal(sid, utt, now_ms, ev_tx, None)
             .await
     }
 
     pub(crate) async fn process_spoken_utterance_with_ack(
         &self,
-        session_id: &SessionId,
-        utterance: &CompletedUtterance,
-        now_unix_ms: i64,
+        sid: &SessionId,
+        utt: &CompletedUtterance,
+        now_ms: i64,
         ev_tx: Option<mpsc::Sender<SpokenTurnEvent>>,
-        started_tx: oneshot::Sender<()>,
+        ack: SpokenTurnAck<'_>,
     ) -> Result<EndToEndTurnResult, SessionError> {
-        self.run_spoken_turn_internal(session_id, utterance, now_unix_ms, ev_tx, Some(started_tx))
+        self.run_spoken_turn_internal(sid, utt, now_ms, ev_tx, Some(ack))
             .await
     }
 
     async fn run_spoken_turn_internal(
         &self,
         sid: &SessionId,
-        utterance: &CompletedUtterance,
+        utt: &CompletedUtterance,
         now_ms: i64,
         ev_tx: Option<mpsc::Sender<SpokenTurnEvent>>,
-        started_tx: Option<oneshot::Sender<()>>,
+        ack: Option<SpokenTurnAck<'_>>,
     ) -> Result<EndToEndTurnResult, SessionError> {
-        let (stt, prompt_ctx, mut cancel) = self.prepare_stt_stage(sid).await?;
-        if let Some(tx) = started_tx {
-            let _ = tx.send(());
+        let (stt, prompt_ctx, mut cancel, turn_gen) = self.prepare_stt_stage(sid).await?;
+        if let Some(a) = ack {
+            a.turn_gen.store(turn_gen, Ordering::Release);
+            let _ = a.started_tx.send(());
         }
         let tx_ref = ev_tx.as_ref();
         emit_state_ev(tx_ref, SessionState::Processing).await;
-        let res = transcribe_with_cancel(stt.as_ref(), utterance, &prompt_ctx, &mut cancel).await;
+        let res = transcribe_with_cancel(stt.as_ref(), utt, &prompt_ctx, &mut cancel).await;
         let (tx_ev, cont) = self.after_stt_stage(sid, res, &cancel).await?;
         self.dispatch_after_stt(sid, tx_ev, cont, now_ms, tx_ref, &cancel)
             .await
@@ -165,7 +174,7 @@ impl SpeakingSessionHost {
         let ai_res = self
             .pump_ai_to_tts(sid, stream, sent_tx, ev_tx, cancel)
             .await;
-        let routed = match self.unwrap_or_fail_turn(sid, ai_res).await {
+        let routed = match self.unwrap_or_fail_turn(sid, ai_res, cancel).await {
             Ok(r) => r,
             Err(err) => return abort_tts_on_err(out, tts_guard, err).await,
         };
@@ -181,14 +190,9 @@ impl SpeakingSessionHost {
         prep: &mut PreparedThinking,
         tx_ev: &UserTranscriptReadyEvent,
     ) -> Result<TutorReplyStream, SessionError> {
-        let req = TutorTurnRequest::new(
-            &prep.history,
-            &tx_ev.transcript,
-            prep.mode,
-            Some(&prep.scaffold),
-        );
-        let res =
-            open_turn_stream_with_cancellation(prep.ai.as_ref(), &req, &mut prep.cancel).await;
-        self.unwrap_or_fail_turn(sid, res).await
+        let sc = Some(&prep.scaffold);
+        let req = TutorTurnRequest::new(&prep.history, &tx_ev.transcript, prep.mode, sc);
+        let res = open_turn_stream_with_cancellation(&*prep.ai, &req, &mut prep.cancel).await;
+        self.unwrap_or_fail_turn(sid, res, &prep.cancel).await
     }
 }

@@ -79,18 +79,46 @@ jobs:
         run: cargo test --manifest-path src-tauri/Cargo.toml
 
       - name: Build Windows NSIS & MSI installers
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
         run: npx tauri build --bundles nsis,msi
 
-      - name: Stage installers & generate SHA256SUMS.txt
+      - name: Stage installers, generate latest.json & SHA256SUMS.txt
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path release-artifacts | Out-Null
+          $tag = $env:GITHUB_REF_NAME
+          $expected = $tag.TrimStart('v')
+          $repo = $env:GITHUB_REPOSITORY
           $nsis = @(Get-ChildItem src-tauri/target/release/bundle/nsis -Filter *.exe -File)
+          $nsisSigFile = @(Get-ChildItem src-tauri/target/release/bundle/nsis -Filter *.exe.sig -File)
           $msi = @(Get-ChildItem src-tauri/target/release/bundle/msi -Filter *.msi -File)
-          if ($nsis.Count -eq 0 -or $msi.Count -eq 0) {
-            throw "Expected both NSIS (.exe) and WiX (.msi) installers."
+          $msiSigFile = @(Get-ChildItem src-tauri/target/release/bundle/msi -Filter *.msi.sig -File)
+          if ($nsis.Count -eq 0 -or $nsisSigFile.Count -eq 0 -or $msi.Count -eq 0 -or $msiSigFile.Count -eq 0) {
+            throw "Expected NSIS (.exe + .exe.sig) and WiX (.msi + .msi.sig) updater artifacts."
           }
-          ($nsis + $msi) | Copy-Item -Destination release-artifacts -Force
+          foreach ($f in ($nsis + $nsisSigFile + $msi + $msiSigFile)) {
+            $safeName = $f.Name -replace ' ', '.'
+            Copy-Item $f.FullName -Destination (Join-Path release-artifacts $safeName) -Force
+          }
+          $nsisUrlName = ($nsis[0].Name -replace ' ', '.')
+          $msiUrlName = ($msi[0].Name -replace ' ', '.')
+          $nsisSig = (Get-Content $nsisSigFile[0].FullName -Raw).Trim()
+          $msiSig = (Get-Content $msiSigFile[0].FullName -Raw).Trim()
+          $baseUrl = "https://github.com/$repo/releases/download/$tag"
+          $manifest = [ordered]@{
+            version = $expected
+            notes = "FluentDesk AI $tag (Windows x64) - automatic in-app update release."
+            pub_date = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+            platforms = [ordered]@{
+              "windows-x86_64" = @{ signature = $nsisSig; url = "$baseUrl/$nsisUrlName" }
+              "windows-x86_64-nsis" = @{ signature = $nsisSig; url = "$baseUrl/$nsisUrlName" }
+              "windows-x86_64-msi" = @{ signature = $msiSig; url = "$baseUrl/$msiUrlName" }
+            }
+          } | ConvertTo-Json -Depth 5
+          $latestPath = Join-Path (Resolve-Path release-artifacts) "latest.json"
+          [System.IO.File]::WriteAllText($latestPath, $manifest, [System.Text.UTF8Encoding]::new($false))
           $lines = Get-ChildItem release-artifacts -File | Sort-Object Name | ForEach-Object {
             $hash = (Get-FileHash -Algorithm SHA256 $_.FullName).Hash.ToLowerInvariant()
             "$hash  $($_.Name)"
@@ -110,13 +138,14 @@ jobs:
 
           Offline-first, voice-first English speaking tutor desktop release.
 
-          ### Downloads
-          - **NSIS Installer (`.exe`)**: Recommended per-user Windows installer.
-          - **MSI Installer (`.msi`)**: Standard Windows Installer package.
-          - **`SHA256SUMS.txt`**: SHA-256 checksums for all release installers.
+          ### Downloads & Auto-Update
+          - **Automatic In-App Updates**: Versions `v0.1.1+` check `latest.json` automatically via **Check for Updates** and install signed updates in place.
+          - **NSIS Installer (`.exe`)**: Recommended per-user Windows installer (`*.exe` + `.exe.sig`).
+          - **MSI Installer (`.msi`)**: Standard Windows Installer package (`*.msi` + `.msi.sig`).
+          - **`latest.json` & `SHA256SUMS.txt`**: Signed updater manifest and SHA-256 checksums.
 
           ### Windows SmartScreen Notice
-          These `__TAG__` installers are currently unsigned. When Windows Defender SmartScreen prompts on first launch, click **More info** -> **Run anyway**.
+          These `__TAG__` installers do not yet have an Authenticode EV certificate (they are Ed25519-signed for the built-in Tauri updater). On first fresh install, click **More info** -> **Run anyway**.
 
           ### Verify Checksums (PowerShell)
           ```powershell

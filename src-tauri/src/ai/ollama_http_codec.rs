@@ -1,6 +1,7 @@
 //! HTTP/1.1 response status and chunked transfer-encoding decoder for Ollama replies.
 
 use crate::domain::{SessionError, SessionErrorKind};
+use crate::telemetry::redact_sensitive_log_text;
 
 pub(crate) struct RawHttpResponse {
     pub status: u16,
@@ -9,7 +10,7 @@ pub(crate) struct RawHttpResponse {
 
 pub(crate) fn parse_http_response(raw: &[u8]) -> Result<String, SessionError> {
     let parsed = parse_raw_http_response(raw)?;
-    check_status_code(parsed.status)?;
+    check_status_with_body(parsed.status, &parsed.body)?;
     Ok(parsed.body)
 }
 
@@ -24,16 +25,36 @@ pub(crate) fn parse_raw_http_response(raw: &[u8]) -> Result<RawHttpResponse, Ses
     Ok(RawHttpResponse { status, body })
 }
 
-pub(crate) fn check_status_code(status: u16) -> Result<(), SessionError> {
+pub(crate) fn check_status_with_body(status: u16, body: &str) -> Result<(), SessionError> {
     if (200..=299).contains(&status) {
         return Ok(());
     }
+    let msg = extract_ollama_error_body(body)
+        .map(|detail| format!("Local Ollama error (HTTP {status}): {detail}"))
+        .unwrap_or_else(|| "Local Ollama returned HTTP error.".to_string());
     Err(SessionError::new(
         SessionErrorKind::AiInferenceFailed,
-        "Local Ollama returned HTTP error.",
+        msg,
         true,
         Some(format!("HTTP {status}")),
     ))
+}
+
+fn extract_ollama_error_body(body: &str) -> Option<String> {
+    let trimmed = body.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let raw = serde_json::from_str::<serde_json::Value>(trimmed)
+        .ok()
+        .and_then(|v| {
+            v.get("error")
+                .and_then(|e| e.as_str())
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(str::to_string)
+        })?;
+    Some(redact_sensitive_log_text(&raw).chars().take(180).collect())
 }
 
 fn decode_body(headers: &str, body: &[u8]) -> Result<String, SessionError> {
@@ -110,5 +131,42 @@ pub(crate) fn bad_http_err() -> SessionError {
         "Malformed HTTP response from local Ollama service.",
         true,
         None,
+    )
+}
+
+pub(crate) fn timeout_err() -> SessionError {
+    SessionError::new(
+        SessionErrorKind::AiProviderUnavailable,
+        "Timed out waiting for local Ollama service.",
+        true,
+        None,
+    )
+}
+
+pub(crate) fn io_err(err: std::io::Error) -> SessionError {
+    SessionError::new(
+        SessionErrorKind::AiProviderUnavailable,
+        "Could not connect to local Ollama service on localhost.",
+        true,
+        Some(err.to_string()),
+    )
+}
+
+pub(crate) fn ollama_service_err(raw: &str) -> SessionError {
+    let clean: String = redact_sensitive_log_text(raw).chars().take(180).collect();
+    SessionError::new(
+        SessionErrorKind::AiInferenceFailed,
+        format!("Local Ollama error: {clean}"),
+        true,
+        Some(clean),
+    )
+}
+
+pub(crate) fn parse_err(detail: String) -> SessionError {
+    SessionError::new(
+        SessionErrorKind::AiInferenceFailed,
+        "Unreadable response from local Ollama service.",
+        true,
+        Some(detail),
     )
 }

@@ -3,6 +3,7 @@
 use crate::domain::{
     sanitize_untrusted_text, CorrectionMode, SessionError, SessionErrorKind, TutorReply,
 };
+use crate::modules::tutor::stream_parser::SpokenJsonStreamParser;
 use serde::Deserialize;
 
 #[derive(Deserialize)]
@@ -29,8 +30,19 @@ pub fn parse_tutor_response_or_fallback(
     if let Some(parsed) = try_parse_raw_json(stripped) {
         return build_validated_reply(parsed, correction_mode);
     }
-    let follow_up = extract_follow_up_prompt(stripped);
-    TutorReply::new_validated(stripped, None, follow_up).map_err(map_empty_reply_error)
+    let recovered = extract_truncated_spoken_reply(stripped);
+    let text = recovered.as_deref().unwrap_or(stripped);
+    let follow_up = extract_follow_up_prompt(text);
+    TutorReply::new_validated(text, None, follow_up).map_err(map_empty_reply_error)
+}
+
+fn extract_truncated_spoken_reply(stripped: &str) -> Option<String> {
+    let start = stripped.find('{')?;
+    let mut parser = SpokenJsonStreamParser::new();
+    let mut parts = parser.push_token(&stripped[start..]);
+    parts.extend(parser.finish().0);
+    let joined = parts.join(" ");
+    (!joined.trim().is_empty()).then_some(joined)
 }
 
 /// Dynamically extracts a distinct closing question sentence from a tutor reply.

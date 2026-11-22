@@ -3,6 +3,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod desktop;
+mod updater;
 
 use fluentdesk_core::local_server::{run_default_bridge, DEFAULT_SERVER_PORT};
 

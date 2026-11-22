@@ -22,7 +22,7 @@ use crate::telemetry::RedactedSecret;
 use async_trait::async_trait;
 use serde_json::{json, Value};
 
-const CLOUD_TIMEOUT_SECS: u64 = 12;
+const CLOUD_TIMEOUT_SECS: u64 = 20;
 
 #[derive(Clone)]
 pub struct OpenAiCompatProvider {

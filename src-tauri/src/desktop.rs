@@ -17,6 +17,11 @@ pub fn run() {
 fn build_app() -> tauri::Builder<tauri::Wry> {
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(focus_main_window))
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .invoke_handler(tauri::generate_handler![
+            crate::updater::check_desktop_update,
+            crate::updater::install_desktop_update
+        ])
         .setup(setup_desktop_app)
 }
 

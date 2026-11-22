@@ -6,18 +6,19 @@ use crate::ai::{
     cloud_stream_adapters::{stream_gemini, stream_openai_compat},
     gemini::GeminiProvider,
     openai_compat::OpenAiCompatProvider,
-    provider::{AiProvider, TutorReplyStream, TutorStreamItem},
+    provider::{AiProvider, TutorReplyStream},
     router::TutorRouter,
     router_exec::{
         advance_cursor, build_candidate_list, consent_err, missing_key_err,
         resolve_ollama_provider, DispatchEnv, TRANSIENT_COOLDOWN_SECS,
     },
+    router_stream_failover::{verify_first_stream_item, wrap_verified_stream},
+    router_types::RouterState,
 };
 use crate::domain::{
     ConversationTurn, CorrectionMode, PedagogicalScaffold, SessionError, Transcript,
 };
 use std::sync::atomic::Ordering;
-use tokio::sync::mpsc;
 
 pub(crate) struct StreamTurnInput<'a> {
     pub history: &'a [ConversationTurn],
@@ -49,38 +50,40 @@ impl TutorRouter {
         req_provider: Option<ProviderPreference>,
         req_model: Option<&str>,
     ) -> Result<TutorReplyStream, SessionError> {
-        let st = self.load_routing_state().await?;
-        let effective = req_provider.unwrap_or(st.prefs.preferred_provider);
-        let cursor = self.rr_cursor.load(Ordering::Relaxed);
-        let cands = build_candidate_list(
-            effective,
-            st.prefs.cloud_opt_in,
-            cursor,
-            &self.secrets,
-            |id| self.breakers.lock().expect("lock").is_healthy(id),
-        )?;
-        let env = DispatchEnv {
-            ollama_base: &self.ollama_base,
-            endpoints: &st.endpoint_overrides,
-            overrides: &st.prefs.model_overrides,
-            secrets: &self.secrets,
-            breakers: &self.breakers,
-            rr_cursor: &self.rr_cursor,
-        };
+        let (st, cands, is_auto) = self.prepare_candidates(req_provider).await?;
+        let env = self.dispatch_env(&st);
         let turn = StreamTurnInput {
             history,
             transcript,
             mode,
             scaffold,
         };
-        execute_stream_candidates(
-            &cands,
-            &env,
-            &turn,
-            req_model,
-            effective == ProviderPreference::Auto,
-        )
-        .await
+        execute_stream_candidates(&cands, &env, &turn, req_model, is_auto).await
+    }
+
+    pub(crate) async fn prepare_candidates(
+        &self,
+        req_provider: Option<ProviderPreference>,
+    ) -> Result<(RouterState, Vec<ProviderId>, bool), SessionError> {
+        let st = self.load_routing_state().await?;
+        let eff = req_provider.unwrap_or(st.prefs.preferred_provider);
+        let cursor = self.rr_cursor.load(Ordering::Relaxed);
+        let cands =
+            build_candidate_list(eff, st.prefs.cloud_opt_in, cursor, &self.secrets, |id| {
+                self.breakers.lock().expect("lock").is_healthy(id)
+            })?;
+        Ok((st, cands, eff == ProviderPreference::Auto))
+    }
+
+    pub(crate) fn dispatch_env<'a>(&'a self, st: &'a RouterState) -> DispatchEnv<'a> {
+        DispatchEnv {
+            ollama_base: &self.ollama_base,
+            endpoints: &st.endpoint_overrides,
+            overrides: &st.prefs.model_overrides,
+            secrets: &self.secrets,
+            breakers: &self.breakers,
+            rr_cursor: &self.rr_cursor,
+        }
     }
 }
 
@@ -100,8 +103,16 @@ async fn execute_stream_candidates(
             .then_some(req_model)
             .flatten()
             .or_else(|| env.overrides.get(&id).map(String::as_str));
-        match open_stream_provider(id, model, env, turn).await {
-            Ok(rx) => return Ok(annotate_failover_stream(rx, notes)),
+        match open_and_verify_provider(id, model, env, turn).await {
+            Ok((first, rx)) => {
+                return Ok(wrap_verified_stream(
+                    id,
+                    first,
+                    rx,
+                    notes,
+                    std::sync::Arc::clone(env.breakers),
+                ))
+            }
             Err((err, failure)) => {
                 env.breakers
                     .lock()
@@ -113,6 +124,17 @@ async fn execute_stream_candidates(
         }
     }
     Err(last_err.unwrap_or_else(consent_err))
+}
+
+async fn open_and_verify_provider(
+    id: ProviderId,
+    model: Option<&str>,
+    env: &DispatchEnv<'_>,
+    turn: &StreamTurnInput<'_>,
+) -> Result<(crate::ai::provider::TutorStreamItem, TutorReplyStream), (SessionError, CloudFailure)>
+{
+    let rx = open_stream_provider(id, model, env, turn).await?;
+    verify_first_stream_item(id, rx).await
 }
 
 async fn open_stream_provider(
@@ -161,27 +183,4 @@ async fn open_stream_provider(
         }
         ProviderId::Ollama => unreachable!(),
     }
-}
-
-fn annotate_failover_stream(mut inner: TutorReplyStream, notes: Vec<String>) -> TutorReplyStream {
-    if notes.is_empty() {
-        return inner;
-    }
-    let failover_note = Some(format!("Failover: {}", notes.join("; ")));
-    let (tx, rx) = mpsc::channel(16);
-    tokio::spawn(async move {
-        while let Some(item) = inner.recv().await {
-            let mapped = match item {
-                Ok(TutorStreamItem::Final(mut r)) => {
-                    r.failover_note = failover_note.clone();
-                    Ok(TutorStreamItem::Final(r))
-                }
-                other => other,
-            };
-            if tx.send(mapped).await.is_err() {
-                break;
-            }
-        }
-    });
-    rx
 }

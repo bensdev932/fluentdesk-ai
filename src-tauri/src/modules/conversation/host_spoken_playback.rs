@@ -32,9 +32,10 @@ impl SpeakingSessionHost {
         &self,
         sid: &SessionId,
         res: Result<T, SessionError>,
+        cancel: &SessionCancellationToken,
     ) -> Result<T, SessionError> {
         let mut guard = self.active.lock().await;
-        let mgr = verify_still_active(guard.as_mut(), sid)?;
+        let mgr = verify_turn_active(guard.as_mut(), sid, cancel)?;
         fail_if_err(mgr, res)
     }
 

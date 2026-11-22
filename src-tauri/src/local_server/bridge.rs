@@ -24,6 +24,7 @@ async fn init_default_bridge_deps() -> Result<(Arc<TutorRouter>, sqlx::SqlitePoo
     let router = TutorRouter::new_with_persistence(cfg, repo, dir)
         .await
         .map_err(|e| e.user_message)?;
+    router.spawn_local_warmup_if_needed();
     Ok((Arc::new(router), pool))
 }
 

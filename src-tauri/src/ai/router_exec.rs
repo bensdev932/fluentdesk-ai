@@ -17,7 +17,7 @@ use crate::domain::{
 use std::collections::HashMap;
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
-    Mutex,
+    Arc, Mutex,
 };
 
 pub(crate) const TRANSIENT_COOLDOWN_SECS: u64 = 60;
@@ -68,7 +68,7 @@ pub(crate) struct DispatchEnv<'a> {
     pub endpoints: &'a HashMap<ProviderId, String>,
     pub overrides: &'a HashMap<ProviderId, String>,
     pub secrets: &'a RuntimeSecretStore,
-    pub breakers: &'a Mutex<CircuitBreakers>,
+    pub breakers: &'a Arc<Mutex<CircuitBreakers>>,
     pub rr_cursor: &'a AtomicUsize,
 }
 

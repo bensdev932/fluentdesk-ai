@@ -5,10 +5,10 @@ use crate::ai::{
     http_stream_io::HttpLineReader,
     ollama::OllamaConfig,
     ollama_http::{
-        connect_with_timeout, format_http_request, io_err, parse_err,
+        connect_with_timeout, format_http_request, io_err, ollama_service_err, parse_err,
         serialize_generate_request_with_stream, timeout_err, OLLAMA_GENERATE_TIMEOUT_SECS,
     },
-    ollama_http_codec::{bad_http_err, check_status_code},
+    ollama_http_codec::{bad_http_err, check_status_with_body},
     provider::{TutorReplyStream, TutorStreamItem},
     router_types::RoutedTutorReply,
 };
@@ -22,12 +22,23 @@ use std::time::Duration;
 use tokio::io::AsyncWriteExt;
 use tokio::sync::mpsc;
 
+const OLLAMA_STREAM_IDLE_TIMEOUT_SECS: u64 = 25;
+type StreamTx = mpsc::Sender<Result<TutorStreamItem, SessionError>>;
+
 #[derive(Deserialize)]
 struct OllamaStreamChunk {
     #[serde(default)]
     response: String,
     #[serde(default)]
     done: bool,
+    #[serde(default)]
+    error: Option<String>,
+}
+
+#[derive(Clone, Copy)]
+pub(crate) struct StreamTimeouts {
+    pub first: Duration,
+    pub idle: Duration,
 }
 
 /// Connects to Ollama with `stream: true`, validates HTTP status, and streams spoken sentences.
@@ -36,44 +47,75 @@ pub(crate) async fn stream_ollama_completion(
     prompt: &TutorPrompt,
     mode: CorrectionMode,
 ) -> Result<TutorReplyStream, SessionError> {
+    let timeouts = StreamTimeouts {
+        first: Duration::from_secs(OLLAMA_GENERATE_TIMEOUT_SECS),
+        idle: Duration::from_secs(OLLAMA_STREAM_IDLE_TIMEOUT_SECS),
+    };
+    stream_ollama_completion_with_timeouts(cfg, prompt, mode, timeouts).await
+}
+
+pub(crate) async fn stream_ollama_completion_with_timeouts(
+    cfg: &OllamaConfig,
+    prompt: &TutorPrompt,
+    mode: CorrectionMode,
+    timeouts: StreamTimeouts,
+) -> Result<TutorReplyStream, SessionError> {
     let payload = serialize_generate_request_with_stream(cfg, prompt, true)?;
     let addr = cfg.socket_addr();
     let raw_req = format_http_request(&addr, "POST", "/api/generate", &payload);
-    let mut reader = open_ollama_stream(&addr, &raw_req).await?;
+    let mut reader = open_ollama_stream(&addr, &raw_req, timeouts.first).await?;
     let (tx, rx) = mpsc::channel(16);
     let model = cfg.model_name().to_string();
     tokio::spawn(async move {
-        let _ = pump_ollama_lines(&mut reader, &tx, &model, mode).await;
+        let _ = pump_ollama_lines(&mut reader, &tx, &model, mode, timeouts).await;
     });
     Ok(rx)
 }
 
-async fn open_ollama_stream(addr: &str, raw_req: &str) -> Result<HttpLineReader, SessionError> {
+async fn open_ollama_stream(
+    addr: &str,
+    raw_req: &str,
+    head_timeout: Duration,
+) -> Result<HttpLineReader, SessionError> {
     let mut sock = connect_with_timeout(addr).await?;
     sock.write_all(raw_req.as_bytes()).await.map_err(io_err)?;
-    let (head, reader) = tokio::time::timeout(
-        Duration::from_secs(OLLAMA_GENERATE_TIMEOUT_SECS),
-        HttpLineReader::read_head(sock),
-    )
-    .await
-    .map_err(|_| timeout_err())?
-    .map_err(|_| bad_http_err())?;
-    check_status_code(head.status)?;
+    let (head, mut reader) = tokio::time::timeout(head_timeout, HttpLineReader::read_head(sock))
+        .await
+        .map_err(|_| timeout_err())?
+        .map_err(|_| bad_http_err())?;
+    if !(200..=299).contains(&head.status) {
+        let snippet = tokio::time::timeout(Duration::from_secs(1), reader.next_line())
+            .await
+            .ok()
+            .and_then(|r| r.ok().flatten())
+            .unwrap_or_default();
+        check_status_with_body(head.status, &snippet)?;
+    }
     Ok(reader)
 }
 
 async fn pump_ollama_lines(
     reader: &mut HttpLineReader,
-    tx: &mpsc::Sender<Result<TutorStreamItem, SessionError>>,
+    tx: &StreamTx,
     model: &str,
     mode: CorrectionMode,
+    timeouts: StreamTimeouts,
 ) -> Result<(), ()> {
-    let mut parser = SpokenJsonStreamParser::new();
-    while let Some(line) = read_next_line_or_err(reader, tx).await? {
+    let (mut parser, mut saw_chunk) = (SpokenJsonStreamParser::new(), false);
+    loop {
+        let wait = if saw_chunk {
+            timeouts.idle
+        } else {
+            timeouts.first
+        };
+        let Some(line) = read_next_line_or_err(reader, tx, wait).await? else {
+            break;
+        };
         let trimmed = line.trim();
         if trimmed.is_empty() {
             continue;
         }
+        saw_chunk = true;
         if process_ndjson_line(trimmed, &mut parser, tx).await? {
             break;
         }
@@ -83,57 +125,45 @@ async fn pump_ollama_lines(
 
 async fn read_next_line_or_err(
     reader: &mut HttpLineReader,
-    tx: &mpsc::Sender<Result<TutorStreamItem, SessionError>>,
+    tx: &StreamTx,
+    wait: Duration,
 ) -> Result<Option<String>, ()> {
-    match reader.next_line().await {
-        Ok(line) => Ok(line),
-        Err(err) => {
-            let _ = tx.send(Err(io_err(err))).await;
-            Err(())
-        }
+    match tokio::time::timeout(wait, reader.next_line()).await {
+        Ok(Ok(line)) => Ok(line),
+        Ok(Err(err)) => send_err(tx, io_err(err)).await,
+        Err(_) => send_err(tx, timeout_err()).await,
     }
 }
 
 async fn process_ndjson_line(
     line: &str,
     parser: &mut SpokenJsonStreamParser,
-    tx: &mpsc::Sender<Result<TutorStreamItem, SessionError>>,
+    tx: &StreamTx,
 ) -> Result<bool, ()> {
     let chunk: OllamaStreamChunk = match serde_json::from_str(line) {
         Ok(c) => c,
-        Err(err) => {
-            let _ = tx.send(Err(parse_err(err.to_string()))).await;
-            return Err(());
-        }
+        Err(err) => return send_err(tx, parse_err(err.to_string())).await,
     };
-    for sentence in parser.push_token(&chunk.response) {
-        if tx
-            .send(Ok(TutorStreamItem::Sentence(sentence)))
-            .await
-            .is_err()
-        {
-            return Err(());
-        }
+    if let Some(err) = chunk
+        .error
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        return send_err(tx, ollama_service_err(err)).await;
     }
+    send_sentences(parser.push_token(&chunk.response), tx).await?;
     Ok(chunk.done)
 }
 
 async fn emit_ollama_final(
     parser: SpokenJsonStreamParser,
-    tx: &mpsc::Sender<Result<TutorStreamItem, SessionError>>,
+    tx: &StreamTx,
     model: &str,
     mode: CorrectionMode,
 ) -> Result<(), ()> {
     let (tail, raw) = parser.finish();
-    for sentence in tail {
-        if tx
-            .send(Ok(TutorStreamItem::Sentence(sentence)))
-            .await
-            .is_err()
-        {
-            return Err(());
-        }
-    }
+    send_sentences(tail, tx).await?;
     let item = parse_tutor_response_or_fallback(&raw, mode).map(|reply| {
         TutorStreamItem::Final(RoutedTutorReply {
             reply,
@@ -145,4 +175,22 @@ async fn emit_ollama_final(
     });
     let _ = tx.send(item).await;
     Ok(())
+}
+
+async fn send_sentences(sentences: Vec<String>, tx: &StreamTx) -> Result<(), ()> {
+    for sentence in sentences {
+        if tx
+            .send(Ok(TutorStreamItem::Sentence(sentence)))
+            .await
+            .is_err()
+        {
+            return Err(());
+        }
+    }
+    Ok(())
+}
+
+async fn send_err<T>(tx: &StreamTx, err: SessionError) -> Result<T, ()> {
+    let _ = tx.send(Err(err)).await;
+    Err(())
 }

@@ -90,15 +90,13 @@ async fn pump_sse_lines(
         match run_sse_pass(&mut sse_rx, &mut ctx, extract_delta, tx).await {
             SseStop::Done => break,
             SseStop::Aborted => return,
-            SseStop::PayloadErr(c, m) => {
-                match try_reopen_sse(retry.take(), c.as_deref(), &m, &ctx, tx).await {
-                    Some(next_rx) => {
-                        ctx.reset_for_retry();
-                        sse_rx = next_rx;
-                    }
-                    None => return,
+            SseStop::PayloadErr(err) => match try_reopen_sse(retry.take(), err, &ctx, tx).await {
+                Some(next_rx) => {
+                    ctx.reset_for_retry();
+                    sse_rx = next_rx;
                 }
-            }
+                None => return,
+            },
         }
     }
     if flush_raw_fallback(&mut ctx, extract_delta, tx).await {
@@ -129,8 +127,8 @@ async fn flush_raw_fallback(
         return true;
     }
     let raw = std::mem::take(&mut ctx.raw);
-    if let Some((_, msg)) = extract_sse_error(raw.trim()) {
-        ctx.abort_payload_err(tx, &msg).await;
+    if let Some(err) = extract_sse_error(raw.trim()) {
+        ctx.abort_payload_err(tx, err.status, &err.message).await;
         return false;
     }
     ctx.emit_delta(raw.trim(), extract_delta, tx).await
@@ -157,8 +155,8 @@ async fn step_sse_item(
     if data == "[DONE]" {
         return ControlFlow::Break(SseStop::Done);
     }
-    if let Some((code, msg)) = extract_sse_error(data) {
-        return ControlFlow::Break(SseStop::PayloadErr(code, msg));
+    if let Some(err) = extract_sse_error(data) {
+        return ControlFlow::Break(SseStop::PayloadErr(err));
     }
     if ctx.emit_delta(data, extract_delta, tx).await {
         ControlFlow::Continue(())

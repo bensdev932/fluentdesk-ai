@@ -4,6 +4,7 @@ use crate::ai::catalog::ProviderId;
 use crate::ai::cloud_error::{map_cloud_err, store_compat_mode, CompatMode};
 use crate::ai::cloud_http::{err_msg, CloudHttpError};
 use crate::ai::cloud_http_stream::{post_sse_stream, SseLineStream};
+use crate::ai::cloud_stream_extract::SsePayloadError;
 use crate::ai::openai_compat::OpenAiCompatProvider;
 use crate::ai::provider::TutorStreamItem;
 use crate::ai::router_types::RoutedTutorReply;
@@ -19,7 +20,7 @@ pub(crate) type SseOutTx = mpsc::Sender<Result<TutorStreamItem, SessionError>>;
 pub(crate) enum SseStop {
     Done,
     Aborted,
-    PayloadErr(Option<String>, String),
+    PayloadErr(SsePayloadError),
 }
 
 pub(crate) struct SsePumpCtx {
@@ -47,8 +48,8 @@ impl SsePumpCtx {
         let _ = tx.send(Err(map_cloud_err(self.provider, err).0)).await;
     }
 
-    pub(crate) async fn abort_payload_err(&self, tx: &SseOutTx, msg: &str) {
-        self.abort_err(tx, err_msg(None, msg, false)).await;
+    pub(crate) async fn abort_payload_err(&self, tx: &SseOutTx, status: Option<u16>, msg: &str) {
+        self.abort_err(tx, err_msg(status, msg, false)).await;
     }
 
     pub(crate) async fn emit_delta(
@@ -127,23 +128,25 @@ impl OpenAiSseRetry {
 
 pub(crate) async fn try_reopen_sse(
     retry: Option<OpenAiSseRetry>,
-    code: Option<&str>,
-    msg: &str,
+    err: SsePayloadError,
     ctx: &SsePumpCtx,
     tx: &SseOutTx,
 ) -> Option<SseLineStream> {
     let Some(r) = retry else {
-        ctx.abort_payload_err(tx, msg).await;
+        ctx.abort_payload_err(tx, err.status, &err.message).await;
         return None;
     };
-    match r.reopen_without_json(code, msg, ctx.sent_sentence).await {
+    match r
+        .reopen_without_json(err.code.as_deref(), &err.message, ctx.sent_sentence)
+        .await
+    {
         Ok(rx) => Some(rx),
         Err(Some(http_err)) => {
             ctx.abort_err(tx, http_err).await;
             None
         }
         Err(None) => {
-            ctx.abort_payload_err(tx, msg).await;
+            ctx.abort_payload_err(tx, err.status, &err.message).await;
             None
         }
     }

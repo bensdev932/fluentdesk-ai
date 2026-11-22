@@ -60,7 +60,9 @@ async fn spawn_slow_ollama() -> u16 {
                 let req = read_req(&mut sock).await;
                 let body = if req.contains("/api/tags") {
                     r#"{"models":[{"name":"qwen2.5:7b"}]}"#
-                } else if req.contains("Slow cancelled turn") {
+                } else if req.contains("Slow cancelled turn")
+                    && !req.contains("Fresh after immediate barge")
+                {
                     tokio::time::sleep(Duration::from_millis(40)).await;
                     r#"{"response":"{\"spokenReply\":\"Should never commit.\"}"}"#
                 } else {

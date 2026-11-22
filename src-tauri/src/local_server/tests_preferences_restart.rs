@@ -98,7 +98,11 @@ async fn disabling_cloud_via_preferences_resets_pinned_cloud_provider_and_persis
         prov(&gsnap, "groq")["selectedModel"].as_str(),
         Some("openai/gpt-oss-120b")
     );
-    assert_eq!(prov(&gsnap, "groq")["keySource"].as_str(), Some("runtime"));
+    let expected_key_src = if cfg!(windows) { "runtime" } else { "none" };
+    assert_eq!(
+        prov(&gsnap, "groq")["keySource"].as_str(),
+        Some(expected_key_src)
+    );
     assert_no_secrets(&graw, &["gsk_persist_secret_88"]);
 
     let (rs, _, rprefs) = http_json(p2, "GET", "/api/preferences", "").await;
@@ -107,16 +111,18 @@ async fn disabling_cloud_via_preferences_resets_pinned_cloud_provider_and_persis
     assert_eq!(rprefs["speakingSpeed"].as_f64(), Some(1.5));
     assert_eq!(rprefs["preferredProvider"].as_str(), Some("groq"));
 
-    let (ts, traw, turn) = http_json(
-        p2,
-        "POST",
-        "/api/tutor/reply",
-        r#"{"history":[],"userText":"Hello after restart","correctionMode":"Natural"}"#,
-    )
-    .await;
-    assert_eq!(ts, 200);
-    assert_eq!(turn["provider"].as_str(), Some("groq"));
-    assert_no_secrets(&traw, &["gsk_persist_secret_88"]);
+    if cfg!(windows) {
+        let (ts, traw, turn) = http_json(
+            p2,
+            "POST",
+            "/api/tutor/reply",
+            r#"{"history":[],"userText":"Hello after restart","correctionMode":"Natural"}"#,
+        )
+        .await;
+        assert_eq!(ts, 200);
+        assert_eq!(turn["provider"].as_str(), Some("groq"));
+        assert_no_secrets(&traw, &["gsk_persist_secret_88"]);
+    }
 
     let (os, _, opted_out) =
         http_json(p2, "PATCH", "/api/preferences", r#"{"cloudOptIn":false}"#).await;

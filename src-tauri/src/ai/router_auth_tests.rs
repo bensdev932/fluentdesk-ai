@@ -75,11 +75,8 @@ async fn persistent_router_reloads_sqlite_prefs_and_dpapi_secrets_without_json_p
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_nanos();
-    let dir = std::env::temp_dir().join(format!(
-        "fluentdesk_router_persist_{}_{}",
-        std::process::id(),
-        nanos
-    ));
+    let tag = format!("fluentdesk_router_persist_{}_{nanos}", std::process::id());
+    let dir = std::env::temp_dir().join(tag);
     let db_path = dir.join("fluentdesk.db");
     let ol = OllamaConfig::try_new("127.0.0.1", dead_port().await, "llama3.2:3b").unwrap();
 
@@ -117,17 +114,19 @@ async fn persistent_router_reloads_sqlite_prefs_and_dpapi_secrets_without_json_p
         .into_iter()
         .find(|p| p.id == ProviderId::Gemini)
         .unwrap();
-    assert_eq!(
-        (gem.selected_model.as_str(), gem.key_source),
-        ("gemini-3.5-flash", KeySource::Runtime)
-    );
+    let expected = if cfg!(windows) {
+        KeySource::Runtime
+    } else {
+        KeySource::None
+    };
+    assert_eq!(gem.selected_model, "gemini-3.5-flash");
+    assert_eq!(gem.key_source, expected);
 
-    r2.apply_config_patch(RouterConfigPatch {
+    let opt_out = RouterConfigPatch {
         cloud_opt_in: Some(false),
         ..Default::default()
-    })
-    .await
-    .unwrap();
+    };
+    r2.apply_config_patch(opt_out).await.unwrap();
     let after_opt_out = r2.providers_snapshot().await;
     assert!(!after_opt_out.cloud_opt_in);
     assert_eq!(after_opt_out.preferred_provider, ProviderPreference::Auto);

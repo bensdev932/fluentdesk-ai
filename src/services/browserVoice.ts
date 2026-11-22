@@ -1,0 +1,204 @@
+import { ENGLISH_VOICE_PRESETS, sanitizeUntrustedText } from '../types/domain';
+
+export interface MicCaptureHandle {
+  stop(): void;
+  reason?: string;
+}
+
+export interface SpeechRecognitionCallbacks {
+  onInterim(text: string): void;
+  onFinal(text: string, confidence: number): void;
+  onStatus(note: string): void;
+}
+
+export interface EnglishVoiceOption {
+  id: string;
+  label: string;
+  lang: string;
+}
+
+export interface SpeakUtteranceOptions {
+  rate?: number;
+  englishVoiceId?: string;
+}
+
+type SpeechRecCtor = new () => {
+  lang: string;
+  continuous: boolean;
+  interimResults: boolean;
+  onresult: ((event: { resultIndex: number; results: ArrayLike<{ isFinal: boolean; 0: { transcript: string; confidence?: number } }> }) => void) | null;
+  onerror: ((event: { error?: string }) => void) | null;
+  onend: (() => void) | null;
+  start(): void;
+  stop(): void;
+};
+
+export async function startBrowserMicCapture(onLevel: (level: number) => void): Promise<MicCaptureHandle> {
+  if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
+    return { stop: () => {}, reason: 'Microphone API unavailable in this environment.' };
+  }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+    });
+    const g = globalThis as unknown as { AudioContext?: typeof AudioContext; webkitAudioContext?: typeof AudioContext };
+    const AudioCtx = g.AudioContext || g.webkitAudioContext;
+    if (!AudioCtx) {
+      return {
+        stop: () => { stream.getTracks().forEach((t) => t.stop()); },
+      };
+    }
+    const ctx = new AudioCtx();
+    const source = ctx.createMediaStreamSource(stream);
+    const analyser = ctx.createAnalyser();
+    analyser.fftSize = 256;
+    source.connect(analyser);
+    const samples = new Uint8Array(analyser.frequencyBinCount || 128);
+    let active = true;
+    let rafId = 0;
+    const gRaf = globalThis as unknown as {
+      requestAnimationFrame?: (cb: (t: number) => void) => number;
+      cancelAnimationFrame?: (id: number) => void;
+    };
+    const schedule = gRaf.requestAnimationFrame ?? ((cb: (t: number) => void) => Number(setTimeout(() => cb(16), 80)));
+    const cancelSchedule = gRaf.cancelAnimationFrame ?? ((id: number) => clearTimeout(id));
+    const tick = (): void => {
+      if (!active) return;
+      analyser.getByteTimeDomainData(samples);
+      let sum = 0;
+      for (let i = 0; i < samples.length; i += 1) {
+        const norm = (samples[i] - 128) / 128;
+        sum += norm * norm;
+      }
+      const rms = samples.length > 0 ? Math.sqrt(sum / samples.length) : 0;
+      onLevel(Math.min(1, rms * 3.5));
+      rafId = schedule(tick);
+    };
+    rafId = schedule(tick);
+    return {
+      stop() {
+        active = false;
+        cancelSchedule(rafId);
+        onLevel(0);
+        stream.getTracks().forEach((t) => t.stop());
+        void ctx.close().catch(() => {});
+      },
+    };
+  } catch {
+    return { stop: () => {}, reason: 'Microphone permission unavailable — use text input or Speak Sample Turn.' };
+  }
+}
+
+export function startBrowserSpeechRecognition(cb: SpeechRecognitionCallbacks): () => void {
+  const g = globalThis as unknown as { SpeechRecognition?: SpeechRecCtor; webkitSpeechRecognition?: SpeechRecCtor };
+  const Ctor = g.SpeechRecognition || g.webkitSpeechRecognition;
+  if (!Ctor) {
+    cb.onStatus('Voice recognition unavailable in this browser — use text input or Speak Sample Turn.');
+    return () => {};
+  }
+  let active = true;
+  const rec = new Ctor();
+  rec.lang = 'en-US';
+  rec.continuous = true;
+  rec.interimResults = true;
+  rec.onresult = (event) => {
+    if (!active) return;
+    let interim = '';
+    for (let i = event.resultIndex; i < event.results.length; i += 1) {
+      const res = event.results[i];
+      const text = sanitizeUntrustedText(res[0]?.transcript ?? '');
+      if (!text) continue;
+      if (res.isFinal) cb.onFinal(text, res[0]?.confidence ?? 0.94);
+      else interim = `${interim} ${text}`.trim();
+    }
+    if (interim && active) cb.onInterim(interim);
+  };
+  rec.onerror = (event) => {
+    if (!active) return;
+    if (event.error && event.error !== 'no-speech' && event.error !== 'aborted') {
+      cb.onStatus(`Mic STT note (${event.error}) — you can also type or click Speak Sample Turn.`);
+    }
+  };
+  rec.onend = () => {
+    if (!active) return;
+    try { rec.start(); } catch { /* ignore */ }
+  };
+  try {
+    rec.start();
+    cb.onStatus('Browser voice recognition active — speak into your microphone.');
+  } catch {
+    cb.onStatus('Ready — speak into your microphone or use the turn input bar.');
+  }
+  return () => {
+    active = false;
+    try { rec.stop(); } catch { /* ignore */ }
+  };
+}
+
+export function normalizeForSpeech(text: string): string {
+  return text
+    .replace(/```[\s\S]*?```/g, ' ')
+    .replace(/\[[^\]]*\]/g, ' ')
+    .replace(/`([^`]*)`/g, '$1')
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    .replace(/\*([^*]+)\*/g, '$1')
+    .replace(/[_#~>|]/g, ' ')
+    .replace(/\p{Extended_Pictographic}/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+export function listPureEnglishVoices(): EnglishVoiceOption[] {
+  const presets: EnglishVoiceOption[] = ENGLISH_VOICE_PRESETS.map((p) => ({ id: p.id, label: p.label, lang: p.id }));
+  const synth = (globalThis as unknown as { speechSynthesis?: SpeechSynthesis }).speechSynthesis;
+  const rawVoices = synth && typeof synth.getVoices === 'function' ? synth.getVoices() : [];
+  const seen = new Set<string>(presets.map((p) => p.id.toLowerCase()));
+  for (const v of rawVoices) {
+    const lang = (v.lang ?? '').trim();
+    if (!lang.toLowerCase().startsWith('en')) continue;
+    const id = (v.name || v.voiceURI || lang).trim();
+    if (!id || seen.has(id.toLowerCase())) continue;
+    seen.add(id.toLowerCase());
+    presets.push({ id, label: `${v.name} (${lang})`, lang });
+  }
+  return presets;
+}
+
+export function speakTutorUtterance(
+  text: string,
+  opts?: SpeakUtteranceOptions,
+): { done: Promise<void>; stop(): void } {
+  const clean = normalizeForSpeech(text);
+  const g = globalThis as unknown as {
+    speechSynthesis?: SpeechSynthesis;
+    SpeechSynthesisUtterance?: typeof SpeechSynthesisUtterance;
+  };
+  const synth = g.speechSynthesis;
+  const Utter = g.SpeechSynthesisUtterance;
+  if (!clean || !synth || !Utter) return { done: Promise.resolve(), stop: () => {} };
+  let settled = false;
+  let finish: () => void = () => {};
+  const done = new Promise<void>((resolve) => {
+    finish = () => { if (!settled) { settled = true; clearTimeout(fallbackTimer); resolve(); } };
+  });
+  const utter = new Utter(clean);
+  const reqVoice = (opts?.englishVoiceId ?? 'en-US').trim();
+  const safeVoice = reqVoice.toLowerCase().startsWith('en') ? reqVoice : 'en-US';
+  utter.lang = safeVoice.length <= 8 ? safeVoice : 'en-US';
+  utter.rate = Math.min(2.0, Math.max(0.5, opts?.rate ?? 1.0));
+  const voices = typeof synth.getVoices === 'function' ? synth.getVoices() : [];
+  const matched = voices.find(
+    (v) => v.lang?.toLowerCase().startsWith('en') && (v.name === reqVoice || v.voiceURI === reqVoice || v.lang?.toLowerCase() === safeVoice.toLowerCase()),
+  );
+  if (matched) { utter.voice = matched; utter.lang = matched.lang || 'en-US'; }
+  utter.onend = () => finish();
+  utter.onerror = () => finish();
+  const fallbackTimer = setTimeout(() => finish(), Math.min(20_000, Math.max(3_500, clean.length * 90)));
+  try { synth.speak(utter); } catch { finish(); }
+  return { done, stop() { try { synth.cancel(); } catch { /* ignore */ } finish(); } };
+}
+
+export function cancelBrowserSpeech(): void {
+  const synth = (globalThis as unknown as { speechSynthesis?: SpeechSynthesis }).speechSynthesis;
+  try { synth?.cancel?.(); } catch { /* ignore */ }
+}

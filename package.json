@@ -1,0 +1,39 @@
+{
+  "name": "fluentdesk-ai",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Local-first, voice-first AI English speaking tutor desktop application",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "dev:local": "vite --mode desktop",
+    "dev:desktop": "vite --mode desktop",
+    "build": "tsc --noEmit && vite build",
+    "build:desktop": "tsc --noEmit && vite build --mode desktop",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.worker.json --noEmit",
+    "cf:build": "cf build",
+    "cf:deploy": "cf deploy --prebuilt",
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "convex": "^1.51.0",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  },
+  "devDependencies": {
+    "@cloudflare/vite-plugin": "^2.0.0-rc.3",
+    "@cloudflare/workers-types": "^5.20261120.1",
+    "@tauri-apps/cli": "^2.12.6",
+    "@types/react": "18.3.12",
+    "@types/react-dom": "18.3.1",
+    "@vitejs/plugin-react": "^4.7.0",
+    "cf": "^1.0.0-rc.2",
+    "typescript": "5.6.3",
+    "vite": "^7.3.8",
+    "vitest": "^4.1.12"
+  }
+}

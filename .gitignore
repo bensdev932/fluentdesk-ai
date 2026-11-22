@@ -1,0 +1,47 @@
+# Rust / Cargo
+target/
+**/target/
+Cargo.lock
+!src-tauri/Cargo.lock
+.cargo/config.toml
+src-tauri/.cargo/config.toml
+src-tauri/gen/schemas/
+
+# Node / Frontend
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# Cloudflare & Convex build/secret artifacts
+.cloudflare/
+.wrangler/
+.dev.vars
+.dev.vars.*
+.cf-secrets.json
+.convex/
+convex/.env*
+
+# Local SQLite databases & runtime artifacts
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+
+# AI Models & Audio captures (never commit models or raw user recordings)
+models/
+*.gguf
+*.bin
+*.onnx
+*.wav
+!tests/fixtures/**/*.wav
+
+# OS / Editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.log
+.env
+.env.*

@@ -1,0 +1,130 @@
+name: Release Desktop (Windows)
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release-windows:
+    name: Build & Publish Windows x64 Installers
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache Cargo registry and build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "src-tauri -> target"
+
+      - name: Verify manifest versions match git tag
+        shell: pwsh
+        run: |
+          $tag = $env:GITHUB_REF_NAME
+          if ($tag -notmatch '^v(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)$') {
+            throw "Tag '$tag' is not valid vX.Y.Z SemVer."
+          }
+          $expected = $Matches[1]
+          $pkgVer = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          $tauriVer = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
+          $cargoToml = Get-Content src-tauri/Cargo.toml -Raw
+          if ($cargoToml -notmatch '(?ms)\[package\].*?^\s*version\s*=\s*"([^"]+)"') {
+            throw "Could not parse package version from src-tauri/Cargo.toml."
+          }
+          $cargoVer = $Matches[1]
+          if ($pkgVer -ne $expected -or $tauriVer -ne $expected -or $cargoVer -ne $expected) {
+            throw "Version mismatch: tag=$expected package.json=$pkgVer tauri.conf.json=$tauriVer Cargo.toml=$cargoVer"
+          }
+          Write-Host "Verified manifest version $expected"
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Run TypeScript typecheck
+        run: npm run typecheck
+
+      - name: Run Vitest unit tests
+        run: npm test
+
+      - name: Build desktop frontend bundle
+        run: npm run build:desktop
+
+      - name: Check Rust formatting
+        run: cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
+
+      - name: Run Clippy lints
+        run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
+
+      - name: Run Rust unit & contract tests
+        run: cargo test --manifest-path src-tauri/Cargo.toml
+
+      - name: Build Windows NSIS & MSI installers
+        run: npx tauri build --bundles nsis,msi
+
+      - name: Stage installers & generate SHA256SUMS.txt
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path release-artifacts | Out-Null
+          $nsis = @(Get-ChildItem src-tauri/target/release/bundle/nsis -Filter *.exe -File)
+          $msi = @(Get-ChildItem src-tauri/target/release/bundle/msi -Filter *.msi -File)
+          if ($nsis.Count -eq 0 -or $msi.Count -eq 0) {
+            throw "Expected both NSIS (.exe) and WiX (.msi) installers."
+          }
+          ($nsis + $msi) | Copy-Item -Destination release-artifacts -Force
+          $lines = Get-ChildItem release-artifacts -File | Sort-Object Name | ForEach-Object {
+            $hash = (Get-FileHash -Algorithm SHA256 $_.FullName).Hash.ToLowerInvariant()
+            "$hash  $($_.Name)"
+          }
+          $sumPath = Join-Path (Resolve-Path release-artifacts) "SHA256SUMS.txt"
+          [System.IO.File]::WriteAllLines($sumPath, $lines, [System.Text.UTF8Encoding]::new($false))
+          Get-ChildItem release-artifacts -File | Select-Object Name, Length
+
+      - name: Publish live GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $tag = $env:GITHUB_REF_NAME
+          $notes = @'
+          ## FluentDesk AI __TAG__ (Windows x64)
+
+          Offline-first, voice-first English speaking tutor desktop release.
+
+          ### Downloads
+          - **NSIS Installer (`.exe`)**: Recommended per-user Windows installer.
+          - **MSI Installer (`.msi`)**: Standard Windows Installer package.
+          - **`SHA256SUMS.txt`**: SHA-256 checksums for all release installers.
+
+          ### Windows SmartScreen Notice
+          These `__TAG__` installers are currently unsigned. When Windows Defender SmartScreen prompts on first launch, click **More info** -> **Run anyway**.
+
+          ### Verify Checksums (PowerShell)
+          ```powershell
+          Get-FileHash .\FluentDesk*.exe -Algorithm SHA256
+          Get-Content .\SHA256SUMS.txt
+          ```
+          '@.Replace('__TAG__', $tag)
+          $notesPath = Join-Path $env:RUNNER_TEMP "release-notes.md"
+          [System.IO.File]::WriteAllText($notesPath, $notes, [System.Text.UTF8Encoding]::new($false))
+          $assets = @(Get-ChildItem release-artifacts -File | Sort-Object Name | ForEach-Object { $_.FullName })
+          gh release create $tag @assets --title "FluentDesk AI $tag" --notes-file $notesPath

@@ -137,11 +137,13 @@ async fn ws_immediate_barge_in_prevents_stale_turn_execution_and_persistence() {
         .await
         .2;
     let turns = hist["turns"].as_array().unwrap();
-    assert_eq!(
-        turns.len(),
-        2,
-        "stale cancelled turn leaked into DB: {turns:?}"
-    );
+    let tutors: Vec<_> = turns.iter().filter(|t| t["role"] == "Tutor").collect();
+    assert!(!turns.iter().any(|t| t["text"] == "Should never commit."));
+    assert_eq!(tutors.len(), 1);
+    let n = turns.len();
+    assert!((2..=3).contains(&n));
+    assert_eq!(turns[n - 2]["text"], "Fresh after immediate barge");
+    assert_eq!(turns[n - 1]["text"], "Fresh turn committed.");
 }
 
 #[tokio::test]

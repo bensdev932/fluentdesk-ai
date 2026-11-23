@@ -86,20 +86,52 @@ export function normalizeForSpeech(text: string): string {
     .trim();
 }
 
+export function scoreEnglishVoice(v: Pick<SpeechSynthesisVoice, 'name' | 'lang' | 'localService'>): number {
+  const name = (v.name ?? '').toLowerCase();
+  const lang = (v.lang ?? '').toLowerCase();
+  let score = 0;
+  if (name.includes('natural') || name.includes('neural')) score += 100;
+  if (name.includes('online')) score += 20;
+  if (name.includes('google us english') || name.includes('google uk english')) score += 75;
+  if (/\b(aria|jenny|guy|ava|andrew|emma|samantha|libby|sonia|ryan)\b/.test(name)) score += 50;
+  if (lang === 'en-us' || lang === 'en-gb') score += 20;
+  if (name.includes('espeak') || name.includes('compact')) score -= 50;
+  return score;
+}
+
+function getRankedSystemEnglishVoices(synth?: SpeechSynthesis): SpeechSynthesisVoice[] {
+  const raw = synth && typeof synth.getVoices === 'function' ? synth.getVoices() : [];
+  return raw
+    .filter((v) => (v.lang ?? '').trim().toLowerCase().startsWith('en'))
+    .sort((a, b) => scoreEnglishVoice(b) - scoreEnglishVoice(a) || a.name.localeCompare(b.name));
+}
+
 export function listPureEnglishVoices(): EnglishVoiceOption[] {
   const presets: EnglishVoiceOption[] = ENGLISH_VOICE_PRESETS.map((p) => ({ id: p.id, label: p.label, lang: p.id }));
   const synth = (globalThis as unknown as { speechSynthesis?: SpeechSynthesis }).speechSynthesis;
-  const rawVoices = synth && typeof synth.getVoices === 'function' ? synth.getVoices() : [];
   const seen = new Set<string>(presets.map((p) => p.id.toLowerCase()));
-  for (const v of rawVoices) {
+  for (const v of getRankedSystemEnglishVoices(synth)) {
     const lang = (v.lang ?? '').trim();
-    if (!lang.toLowerCase().startsWith('en')) continue;
     const id = (v.name || v.voiceURI || lang).trim();
     if (!id || seen.has(id.toLowerCase())) continue;
     seen.add(id.toLowerCase());
     presets.push({ id, label: `${v.name} (${lang})`, lang });
   }
   return presets;
+}
+
+export function subscribeEnglishVoices(onChange: (voices: EnglishVoiceOption[]) => void): () => void {
+  onChange(listPureEnglishVoices());
+  const synth = (globalThis as unknown as { speechSynthesis?: SpeechSynthesis }).speechSynthesis;
+  if (!synth) return () => {};
+  const handler = (): void => { onChange(listPureEnglishVoices()); };
+  if (typeof synth.addEventListener === 'function') {
+    synth.addEventListener('voiceschanged', handler);
+    return () => synth.removeEventListener('voiceschanged', handler);
+  }
+  const prev = synth.onvoiceschanged;
+  synth.onvoiceschanged = handler;
+  return () => { if (synth.onvoiceschanged === handler) synth.onvoiceschanged = prev ?? null; };
 }
 
 export function speakTutorUtterance(
@@ -124,10 +156,10 @@ export function speakTutorUtterance(
   const safeVoice = reqVoice.toLowerCase().startsWith('en') ? reqVoice : 'en-US';
   utter.lang = safeVoice.length <= 8 ? safeVoice : 'en-US';
   utter.rate = Math.min(2.0, Math.max(0.5, opts?.rate ?? 1.0));
-  const voices = typeof synth.getVoices === 'function' ? synth.getVoices() : [];
-  const matched = voices.find(
-    (v) => v.lang?.toLowerCase().startsWith('en') && (v.name === reqVoice || v.voiceURI === reqVoice || v.lang?.toLowerCase() === safeVoice.toLowerCase()),
-  );
+  const voices = getRankedSystemEnglishVoices(synth);
+  const matched = voices.find((v) => v.name === reqVoice || v.voiceURI === reqVoice)
+    ?? voices.find((v) => v.lang?.toLowerCase() === safeVoice.toLowerCase())
+    ?? voices[0];
   if (matched) { utter.voice = matched; utter.lang = matched.lang || 'en-US'; }
   utter.onend = () => finish();
   utter.onerror = () => finish();

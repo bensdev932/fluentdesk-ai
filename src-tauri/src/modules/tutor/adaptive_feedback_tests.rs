@@ -118,3 +118,34 @@ fn guardrails_suppress_false_flags_placeholders_noop_rewrites_and_off_mode() {
         .unwrap();
     assert_eq!((r4.proper_way, r4.why, r4.correction), (None, None, None));
 }
+
+#[test]
+fn native_english_prompt_suggested_replies_and_a1_openers_work() {
+    let sc = scaffold(CefrLevel::A1);
+    let prompt =
+        assemble_scaffolded_tutor_prompt(&[], &tx("Hi"), CorrectionMode::Gentle, Some(&sc));
+    let sys = prompt.system_instruction();
+    assert!(sys.contains("Native English rule"));
+    assert!(sys.contains("suggestedReplies"));
+
+    let json = r#"{"spokenReply":"Hi! What can I get you?","needsImprovement":false,"suggestedReplies":["Can I get a coffee, please?","can i get a coffee, please?","NONE","One iced tea, please.","Hot chocolate, please.","Extra fourth item"]}"#;
+    let parsed =
+        parse_tutor_response_for_utterance(json, CorrectionMode::Gentle, Some("Hi")).unwrap();
+    assert_eq!(
+        parsed.suggested_replies,
+        vec![
+            "Can I get a coffee, please?",
+            "One iced tea, please.",
+            "Hot chocolate, please."
+        ]
+    );
+
+    let opener = crate::domain::build_scenario_opener_for_cefr(
+        "cafe_order",
+        "Cafe Ordering",
+        &[],
+        CefrLevel::A1,
+    );
+    assert!(opener.spoken_reply.contains("What can I get you"));
+    assert!(!opener.suggested_replies.is_empty());
+}

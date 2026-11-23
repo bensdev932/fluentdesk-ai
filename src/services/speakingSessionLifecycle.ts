@@ -111,7 +111,7 @@ function startOfflineContext(rt: SessionRuntime, cfg: StartSpeakingSessionConfig
   rt.offlineSeq += 1;
   const sessionId = `offline-${rt.offlineSeq}`;
   const scaffold = buildOfflineScaffold(cfg);
-  const openerReply = buildOfflineScenarioOpener(scaffold.scenarioId, scaffold.topic);
+  const openerReply = buildOfflineScenarioOpener(scaffold.scenarioId, scaffold.topic, scaffold.cefrLevel);
   rt.active = { sessionId, state: 'Listening', correctionMode: cfg.correctionMode, pushToTalk: cfg.pushToTalk, offline: true, startedAtMs: Date.now(), scaffold, recentTurns: [] };
   rt.emit({ type: 'session-state-changed', sessionId, state: 'Listening', correctionMode: cfg.correctionMode, scaffold, openerReply, warning: offlineWarning(detail), replySource: OFFLINE_SOURCE });
   rt.stopSpeech = speakWithRuntimePrefs(rt, openerReply.spokenReply).stop;

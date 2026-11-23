@@ -92,9 +92,7 @@ async fn sessions_turn_stream_emits_sse_sentence_before_ollama_finishes() {
 }
 
 async fn serve_abort_conn(mut sock: TcpStream) {
-    let mut buf = [0u8; 4096];
-    let n = sock.read(&mut buf).await.unwrap_or(0);
-    let req = String::from_utf8_lossy(&buf[..n]);
+    let req = crate::local_server::tests_cycling::read_req(&mut sock).await;
     if !req.contains("Abort me") {
         let b = if req.contains("/api/tags") {
             r#"{"models":[{"name":"qwen2.5:7b"}]}"#
@@ -102,6 +100,7 @@ async fn serve_abort_conn(mut sock: TcpStream) {
             r#"{"response":"{\"spokenReply\":\"Ok!\"}"}"#
         };
         let _ = sock.write_all(ollama_http("200 OK", b).as_bytes()).await;
+        let _ = sock.shutdown().await;
         return;
     }
     let _ = sock

@@ -71,7 +71,7 @@ impl SessionRepository {
         sqlx::query(
             "SELECT correction_mode, speaking_speed, push_to_talk_enabled, cloud_opt_in,
                     raw_audio_recording_opt_in, preferred_provider, model_overrides_json,
-                    cefr_level, english_voice_id
+                    cefr_level, english_voice_id, pre_conversation_script_enabled
              FROM session_settings WHERE user_id = ?1",
         )
         .bind(user_id)
@@ -90,8 +90,8 @@ impl SessionRepository {
             "INSERT INTO session_settings (
                 user_id, correction_mode, speaking_speed, push_to_talk_enabled, cloud_opt_in,
                 raw_audio_recording_opt_in, preferred_provider, model_overrides_json, cefr_level,
-                english_voice_id, updated_at_unix_ms
-             ) VALUES (?1, 'Gentle', 1.0, 0, 0, 0, 'auto', '{}', 'B1', 'en-US', ?2) ON CONFLICT(user_id) DO NOTHING",
+                english_voice_id, pre_conversation_script_enabled, updated_at_unix_ms
+             ) VALUES (?1, 'Gentle', 1.0, 0, 0, 0, 'auto', '{}', 'B1', 'en-US', 0, ?2) ON CONFLICT(user_id) DO NOTHING",
         )
         .bind(user_id).bind(now_ms).execute(&self.pool).await
         .map_err(|e| persistence_err("Failed to initialize learner preferences.", e))?;
@@ -113,20 +113,22 @@ impl SessionRepository {
             "INSERT INTO session_settings (
                 user_id, correction_mode, speaking_speed, push_to_talk_enabled, cloud_opt_in,
                 raw_audio_recording_opt_in, preferred_provider, model_overrides_json, cefr_level,
-                english_voice_id, updated_at_unix_ms
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+                english_voice_id, pre_conversation_script_enabled, updated_at_unix_ms
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
              ON CONFLICT(user_id) DO UPDATE SET
                correction_mode = excluded.correction_mode, speaking_speed = excluded.speaking_speed,
                push_to_talk_enabled = excluded.push_to_talk_enabled, cloud_opt_in = excluded.cloud_opt_in,
                raw_audio_recording_opt_in = excluded.raw_audio_recording_opt_in, preferred_provider = excluded.preferred_provider,
                model_overrides_json = excluded.model_overrides_json, cefr_level = excluded.cefr_level,
-               english_voice_id = excluded.english_voice_id, updated_at_unix_ms = excluded.updated_at_unix_ms",
+               english_voice_id = excluded.english_voice_id,
+               pre_conversation_script_enabled = excluded.pre_conversation_script_enabled,
+               updated_at_unix_ms = excluded.updated_at_unix_ms",
         )
         .bind(user_id).bind(format_correction_mode(clean.correction_mode)).bind(f64::from(speed.as_f32()))
         .bind(i64::from(clean.push_to_talk_enabled)).bind(i64::from(clean.cloud_opt_in))
         .bind(i64::from(clean.raw_audio_recording_opt_in))
         .bind(clean.preferred_provider.as_str()).bind(overrides_json).bind(clean.cefr_level.as_str())
-        .bind(voice_id).bind(now_unix_ms)
+        .bind(voice_id).bind(i64::from(clean.pre_conversation_script_enabled)).bind(now_unix_ms)
         .execute(&self.pool).await.map_err(|e| persistence_err("Failed to save learner preferences.", e))?;
         Ok(())
     }

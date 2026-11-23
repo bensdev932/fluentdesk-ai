@@ -40,9 +40,10 @@ fn persona_line(scenario_id: &str) -> String {
 
 fn cefr_scaffolding_line(level: CefrLevel) -> &'static str {
     match level {
-        CefrLevel::A1 | CefrLevel::A2 => "Use short, high-frequency everyday phrasing; if helpful, include one simple starter phrase.",
-        CefrLevel::B1 | CefrLevel::B2 => "Use natural everyday phrasing with light idiomatic expressions.",
-        CefrLevel::C1 | CefrLevel::C2 => "Engage fluently with nuanced vocabulary and natural conversational pacing.",
+        CefrLevel::A1 => "Use warm, natural everyday spoken English with very short sentences, contractions, and basic common words (like 'Hi! What would you like?' — never stiff textbook phrasing).",
+        CefrLevel::A2 => "Use simple, warm native spoken English with contractions and everyday vocabulary; keep sentences clear and conversational.",
+        CefrLevel::B1 | CefrLevel::B2 => "Use natural, idiomatic spoken native English with contractions and everyday conversational cadence.",
+        CefrLevel::C1 | CefrLevel::C2 => "Speak like an articulate native English speaker using natural idioms, nuance, and smooth conversational pacing.",
     }
 }
 

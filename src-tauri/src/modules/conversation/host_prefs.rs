@@ -3,6 +3,7 @@
 use crate::database::repository::SessionRepository;
 use crate::domain::{LearnerPreferences, SessionError, SessionId};
 use crate::modules::conversation::{host::SpeakingSessionHost, manager::SessionManager};
+use crate::modules::speech::intake::SpeechIntake;
 use crate::preferences::LearnerPreferencesStore;
 
 pub(crate) fn default_prefs_store(
@@ -27,7 +28,11 @@ impl SpeakingSessionHost {
         if let Some(mgr) = guard.as_mut() {
             mgr.correction_mode = prefs.correction_mode;
             mgr.speaking_speed = prefs.speaking_speed;
-            mgr.scaffold.cefr_level = prefs.cefr_level;
+            if mgr.scaffold.cefr_level != prefs.cefr_level {
+                mgr.scaffold.cefr_level = prefs.cefr_level;
+                mgr.speech_intake =
+                    SpeechIntake::for_session_with_cefr(mgr.push_to_talk, prefs.cefr_level);
+            }
         }
     }
 

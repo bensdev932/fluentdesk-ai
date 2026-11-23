@@ -20,6 +20,28 @@ pub(crate) fn clean_non_placeholder(value: Option<String>) -> Option<String> {
     })
 }
 
+/// Sanitizes up to 3 unique, short, native-English suggested reply lines from model JSON.
+pub(crate) fn clean_suggested_replies(items: Vec<String>) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for raw in items {
+        let stripped = raw.trim().trim_matches('"').trim_matches('\'').trim();
+        let Some(clean) = clean_non_placeholder(Some(stripped.to_string())) else {
+            continue;
+        };
+        let clipped: String = clean.chars().take(120).collect();
+        if !out
+            .iter()
+            .any(|existing| existing.eq_ignore_ascii_case(&clipped))
+        {
+            out.push(clipped);
+        }
+        if out.len() >= 3 {
+            break;
+        }
+    }
+    out
+}
+
 /// Applies mode policy, `needsImprovement` authority, and identical-rewrite suppression.
 pub(crate) fn resolve_structured_feedback(
     needs_improvement: Option<bool>,

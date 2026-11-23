@@ -1,0 +1,79 @@
+.script-toggle-on {
+  border-color: var(--signal-live);
+  background: rgba(52, 211, 153, 0.14);
+  color: var(--text-primary);
+}
+
+.script-card,
+.suggested-replies-bar {
+  background: var(--bg-panel);
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  padding: 0.75rem 0.9rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.script-card-head,
+.suggested-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.script-summary {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.script-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.script-line {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0.5rem;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.script-speaker {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  min-width: 3rem;
+  color: var(--signal-live);
+}
+
+.script-line[data-speaker="You"] .script-speaker {
+  color: var(--accent, #60a5fa);
+}
+
+.script-line-text {
+  flex: 1;
+  font-size: 0.86rem;
+}
+
+.reply-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.reply-chip {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.55rem;
+  border-radius: 10px;
+  border: 1px solid var(--border-subtle);
+  background: rgba(255, 255, 255, 0.04);
+  font-size: 0.83rem;
+}

@@ -20,6 +20,9 @@ pub const MIGRATION_005_VOICE_PREFERENCE: &str =
 /// Structured coaching feedback SQL migration (`006_structured_feedback.sql`).
 pub const MIGRATION_006_STRUCTURED_FEEDBACK: &str =
     include_str!("migrations/006_structured_feedback.sql");
+/// Pre-conversation script toggle SQL migration (`007_pre_conversation_script.sql`).
+pub const MIGRATION_007_PRE_CONVERSATION_SCRIPT: &str =
+    include_str!("migrations/007_pre_conversation_script.sql");
 
 fn persistence_err(msg: &'static str, err: impl std::fmt::Display) -> SessionError {
     SessionError::new(
@@ -91,6 +94,12 @@ pub async fn run_migrations(pool: &SqlitePool) -> Result<(), SessionError> {
                 MIGRATION_006_STRUCTURED_FEEDBACK,
                 "conversation_turns",
                 "proper_way",
+            ),
+            (
+                "007_pre_conversation_script",
+                MIGRATION_007_PRE_CONVERSATION_SCRIPT,
+                "session_settings",
+                "pre_conversation_script_enabled",
             ),
         ],
     )

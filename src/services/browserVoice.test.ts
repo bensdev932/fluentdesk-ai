@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cancelBrowserSpeech, normalizeForSpeech, speakTutorUtterance } from './browserVoice';
+import {
+  cancelBrowserSpeech,
+  listPureEnglishVoices,
+  normalizeForSpeech,
+  speakTutorUtterance,
+  subscribeEnglishVoices,
+} from './browserVoice';
 import { createQueuedSpeechHandle } from './speakingSessionStream';
 
 interface StubUtterance {
@@ -102,5 +108,34 @@ describe('browserVoice TTS queueing without mid-queue synth.cancel()', () => {
     expect(normalizeForSpeech('**Nice!** [smiles] *nods* Try `this` 🎉')).toBe('Nice! nods Try this');
     speakTutorUtterance('### **Well done!** [claps] 👏');
     expect(spoken[0]?.text).toBe('Well done!');
+  });
+
+  it('ranks Natural and Google English voices ahead of generic ones and reacts to voiceschanged', () => {
+    const listeners = new Set<() => void>();
+    let currentVoices = [
+      { name: 'eSpeak English', lang: 'en-US', voiceURI: 'espeak', default: false, localService: true },
+      { name: 'Microsoft David', lang: 'en-US', voiceURI: 'david', default: true, localService: true },
+    ];
+    vi.stubGlobal('speechSynthesis', {
+      speak: vi.fn(),
+      cancel: vi.fn(),
+      getVoices: () => currentVoices,
+      addEventListener: (_ev: string, fn: () => void) => listeners.add(fn),
+      removeEventListener: (_ev: string, fn: () => void) => listeners.delete(fn),
+    });
+    const emitted: string[][] = [];
+    const unsub = subscribeEnglishVoices((vs) => emitted.push(vs.map((v) => v.id)));
+    currentVoices = [
+      ...currentVoices,
+      { name: 'Microsoft Aria Online (Natural) - English (United States)', lang: 'en-US', voiceURI: 'aria', default: false, localService: false },
+    ];
+    listeners.forEach((fn) => fn());
+    unsub();
+    expect(listPureEnglishVoices().map((v) => v.id)).toContain('Microsoft Aria Online (Natural) - English (United States)');
+    const lastIds = emitted.at(-1) ?? [];
+    const ariaIdx = lastIds.indexOf('Microsoft Aria Online (Natural) - English (United States)');
+    const espeakIdx = lastIds.indexOf('eSpeak English');
+    expect(ariaIdx).toBeGreaterThan(-1);
+    expect(ariaIdx).toBeLessThan(espeakIdx);
   });
 });

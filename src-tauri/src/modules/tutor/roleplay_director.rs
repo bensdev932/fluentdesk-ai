@@ -7,7 +7,7 @@ use crate::domain::{
 use crate::modules::tutor::director_context::format_director_block;
 use crate::modules::tutor::director_rules::{
     correction_rule, ANTI_FILLER_RULE, ENGAGEMENT_RULE, EVALUATION_RULES, IDENTITY_RULE,
-    JSON_CONTRACT_RULE,
+    JSON_CONTRACT_RULE, NATIVE_STYLE_RULE,
 };
 use crate::modules::tutor::prompts::{ChatMessage, TutorPrompt};
 
@@ -48,6 +48,7 @@ fn build_system_instruction(
     let budget = word_budget_for_cefr(scaffold.map(|s| s.cefr_level).unwrap_or_default());
     let mut parts = vec![
         IDENTITY_RULE.to_string(),
+        NATIVE_STYLE_RULE.to_string(),
         ENGAGEMENT_RULE.to_string(),
         ANTI_FILLER_RULE.to_string(),
         format!("Keep \"spokenReply\" conversational, voice-friendly, and under ~{budget} words."),

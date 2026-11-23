@@ -110,7 +110,7 @@ async fn scenarios_endpoint_lists_presets_and_starts_scenario_session() {
     .await;
     assert_eq!(s_st, 200);
     assert_eq!(started["scenarioId"], "cafe_order");
-    assert_eq!(started["cefrLevel"], "A2");
+    assert_eq!(started["cefrLevel"], "B1");
     assert_eq!(started["goals"].as_array().unwrap().len(), 3);
     assert!(started["openerReply"]["spokenReply"]
         .as_str()

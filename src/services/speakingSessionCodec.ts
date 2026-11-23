@@ -84,19 +84,18 @@ function pickFeedbackFields(src: { correction?: string; properWay?: string; why?
 }
 
 export function normalizeTurn(turn: ConversationTurn): ConversationTurn {
-  return {
-    id: turn.id,
-    sessionId: turn.sessionId,
-    role: turn.role,
-    text: sanitizeUntrustedText(turn.text, 2000),
-    timestampUnixMs: turn.timestampUnixMs,
-    ...pickFeedbackFields(turn),
-    ...(turn.stageMetadata ? { stageMetadata: turn.stageMetadata } : {}),
-  };
+  return { id: turn.id, sessionId: turn.sessionId, role: turn.role, text: sanitizeUntrustedText(turn.text, 2000), timestampUnixMs: turn.timestampUnixMs, ...pickFeedbackFields(turn), ...(turn.stageMetadata ? { stageMetadata: turn.stageMetadata } : {}) };
+}
+
+function cleanSuggestedReplies(raw?: string[]): string[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const cleaned = raw.map((item) => sanitizeUntrustedText(String(item), 120).trim()).filter(Boolean).slice(0, 3);
+  return cleaned.length > 0 ? cleaned : undefined;
 }
 
 export function normalizeReply(reply: TutorReply): TutorReply {
-  return { spokenReply: sanitizeUntrustedText(reply.spokenReply, 2000), ...pickFeedbackFields(reply) };
+  const suggestedReplies = cleanSuggestedReplies(reply.suggestedReplies);
+  return { spokenReply: sanitizeUntrustedText(reply.spokenReply, 2000), ...pickFeedbackFields(reply), ...(suggestedReplies ? { suggestedReplies } : {}) };
 }
 
 export function offlineWarning(detail: string): SessionError {

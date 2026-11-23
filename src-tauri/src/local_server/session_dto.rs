@@ -39,7 +39,7 @@ impl StartSessionHttpRequest {
             correction_mode: self.correction_mode.unwrap_or(prefs.correction_mode),
             push_to_talk: self.push_to_talk.unwrap_or(prefs.push_to_talk_enabled),
             input_device_id: self.input_device_id,
-            cefr_level: explicit_level.or(self.scenario_id.is_none().then_some(prefs.cefr_level)),
+            cefr_level: explicit_level.or(Some(prefs.cefr_level)),
             scenario_id: self.scenario_id,
             topic: self.topic,
             target_vocabulary: self.target_vocabulary,

@@ -2,8 +2,9 @@
 
 use crate::ai::router_types::RoutedTutorReply;
 use crate::domain::{
-    build_scenario_opener, CefrLevel, ConversationTurn, CorrectionMode, PedagogicalScaffold,
-    PedagogicalScaffoldSnapshot, SessionId, SessionReview, SessionState, TutorReply,
+    build_scenario_opener_for_cefr, CefrLevel, ConversationTurn, CorrectionMode,
+    PedagogicalScaffold, PedagogicalScaffoldSnapshot, SessionId, SessionReview, SessionState,
+    TutorReply,
 };
 use serde::{Deserialize, Serialize};
 use std::ops::Deref;
@@ -62,8 +63,15 @@ impl SessionStatusSnapshot {
         sc: &PedagogicalScaffold,
         session_review: Option<SessionReview>,
     ) -> Self {
-        let opener_reply = (sc.user_turns_completed == 0 && state == SessionState::Listening)
-            .then(|| build_scenario_opener(&sc.scenario_id, sc.topic.as_str(), &sc.learner_facts));
+        let opener_reply =
+            (sc.user_turns_completed == 0 && state == SessionState::Listening).then(|| {
+                build_scenario_opener_for_cefr(
+                    &sc.scenario_id,
+                    sc.topic.as_str(),
+                    &sc.learner_facts,
+                    sc.cefr_level,
+                )
+            });
         Self {
             session_id,
             state,

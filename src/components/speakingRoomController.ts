@@ -38,6 +38,7 @@ export interface SpeakingRoomViewModel {
   pttHeld: boolean;
   speakingSpeed: number;
   englishVoiceId: string;
+  preConversationScriptEnabled: boolean;
   turns: TranscriptItem[];
   streamingTurnId: string | null;
   latestReply: TutorReply | null;
@@ -74,6 +75,7 @@ export function createInitialSpeakingRoomState(): SpeakingRoomViewModel {
     pttHeld: false,
     speakingSpeed: 1.0,
     englishVoiceId: 'en-US',
+    preConversationScriptEnabled: false,
     turns: [],
     streamingTurnId: null,
     latestReply: null,

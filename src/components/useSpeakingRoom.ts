@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { listPureEnglishVoices, type EnglishVoiceOption } from '../services/browserVoice';
+import { listPureEnglishVoices, subscribeEnglishVoices, type EnglishVoiceOption } from '../services/browserVoice';
 import { DEFAULT_ROLEPLAY_SCENARIOS } from '../services/scenariosFallback';
 import type { SpeakingSessionPort } from '../services/tauriService';
 import type {
@@ -47,6 +47,7 @@ export interface SpeakingRoomHandle {
   updateTopic(topic: string): void;
   updateSpeakingSpeed(speed: number): void;
   updateEnglishVoice(voiceId: string): void;
+  togglePreConversationScript(): void;
   togglePushToTalk(pushToTalk: boolean): void;
   holdPushToTalk(pttHeld: boolean): void;
   submitText(text: string): void;
@@ -60,10 +61,11 @@ export function useSpeakingRoom(sessionClient: SpeakingSessionPort): SpeakingRoo
   const [scenarios, setScenarios] = useState<RoleplayScenario[]>(DEFAULT_ROLEPLAY_SCENARIOS);
   const [learnerFacts, setLearnerFacts] = useState<LearnerFact[]>([]);
   const [learnerProgress, setLearnerProgress] = useState<LearnerProgress>(INITIAL_PROGRESS);
-  const [englishVoices] = useState<EnglishVoiceOption[]>(() => listPureEnglishVoices());
+  const [englishVoices, setEnglishVoices] = useState<EnglishVoiceOption[]>(() => listPureEnglishVoices());
 
   useEffect(() => {
     let active = true;
+    const unsubVoices = subscribeEnglishVoices((voices) => { if (active) setEnglishVoices(voices); });
     const refreshFactsAndProgress = (): void => {
       void sessionClient.listLearnerFacts?.().then((facts) => {
         if (active) setLearnerFacts(facts);
@@ -82,6 +84,7 @@ export function useSpeakingRoom(sessionClient: SpeakingSessionPort): SpeakingRoo
         pushToTalk: prefs.pushToTalkEnabled,
         speakingSpeed: prefs.speakingSpeed,
         englishVoiceId: prefs.englishVoiceId || 'en-US',
+        preConversationScriptEnabled: Boolean(prefs.preConversationScriptEnabled),
       }));
     }).catch(() => undefined);
     void sessionClient.listScenarios?.().then((list) => {
@@ -99,7 +102,7 @@ export function useSpeakingRoom(sessionClient: SpeakingSessionPort): SpeakingRoo
         }
       }
     });
-    return () => { active = false; unsubscribe(); };
+    return () => { active = false; unsubVoices(); unsubscribe(); };
   }, [sessionClient]);
 
   const ignoreError = <T,>(promise: Promise<T>): void => { void promise.catch(() => undefined); };
@@ -111,7 +114,6 @@ export function useSpeakingRoom(sessionClient: SpeakingSessionPort): SpeakingRoo
             ...s,
             scenarioId,
             topic: picked.title,
-            cefrLevel: picked.defaultCefr,
             targetVocabulary: picked.targetVocabulary,
             goals: picked.goals,
             completedGoalIds: [],
@@ -136,7 +138,7 @@ export function useSpeakingRoom(sessionClient: SpeakingSessionPort): SpeakingRoo
         sessionClient.startSpeakingSession({
           correctionMode: vm.correctionMode,
           pushToTalk: vm.pushToTalk,
-          cefrLevel: picked ? picked.defaultCefr : vm.cefrLevel,
+          cefrLevel: vm.cefrLevel,
           scenarioId: picked ? picked.id : vm.scenarioId,
           topic: picked ? picked.title : vm.topic,
           targetVocabulary: picked ? picked.targetVocabulary : vm.targetVocabulary,
@@ -165,6 +167,11 @@ export function useSpeakingRoom(sessionClient: SpeakingSessionPort): SpeakingRoo
     updateEnglishVoice: (englishVoiceId) => {
       setVm((s) => ({ ...s, englishVoiceId }));
       if (sessionClient.patchPreferences) ignoreError(sessionClient.patchPreferences({ englishVoiceId }));
+    },
+    togglePreConversationScript: () => {
+      const next = !vm.preConversationScriptEnabled;
+      setVm((s) => ({ ...s, preConversationScriptEnabled: !s.preConversationScriptEnabled }));
+      if (sessionClient.patchPreferences) ignoreError(sessionClient.patchPreferences({ preConversationScriptEnabled: next }));
     },
     togglePushToTalk: (pushToTalk) => {
       setVm((s) => ({ ...s, pushToTalk }));

@@ -65,6 +65,8 @@ pub struct TutorReplyHttpResponse {
     pub why: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub follow_up_prompt: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub suggested_replies: Vec<String>,
     pub provider: ProviderId,
     pub model: String,
     pub is_cloud: bool,
@@ -81,6 +83,7 @@ impl TutorReplyHttpResponse {
             proper_way: r.reply.proper_way,
             why: r.reply.why,
             follow_up_prompt: r.reply.follow_up_prompt,
+            suggested_replies: r.reply.suggested_replies,
             provider: r.provider,
             model: r.model,
             is_cloud: r.is_cloud,

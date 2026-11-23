@@ -31,7 +31,7 @@ export function SessionProgressPill(p: SessionProgressPillProps): React.JSX.Elem
         <select aria-label="Roleplay Scenario" value={p.scenarioId} disabled={!p.editable} onChange={(e) => p.onChangeScenario(e.target.value)}>
           {p.scenarios.map((s) => <option key={s.id} value={s.id}>{s.title}</option>)}
         </select>
-        <select aria-label="CEFR Level" value={p.cefrLevel} disabled={!p.editable} onChange={(e) => p.onChangeCefr(e.target.value as CefrLevel)}>
+        <select aria-label="CEFR Level" value={p.cefrLevel} onChange={(e) => p.onChangeCefr(e.target.value as CefrLevel)}>
           {CEFR_LEVELS.map((lvl) => <option key={lvl} value={lvl}>{lvl}</option>)}
         </select>
         <input aria-label="Lesson Topic" type="text" value={p.topic} maxLength={80} disabled={!p.editable} placeholder="Everyday Conversation" onChange={(e) => p.onChangeTopic(e.target.value)} />

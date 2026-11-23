@@ -24,6 +24,7 @@ const DEFAULT_OFFLINE_PREFS: LearnerPreferencesView = {
   pushToTalkEnabled: false,
   cefrLevel: 'B1',
   englishVoiceId: 'en-US',
+  preConversationScriptEnabled: false,
 };
 
 export function buildOfflineScaffold(cfg: StartSpeakingSessionConfig): ScaffoldProgress {

@@ -1,72 +1,11 @@
-//! Validated learner preferences, English voice ID, and speaking speed value objects.
+//! Consolidated learner voice, CEFR, script, and routing preferences (`T038`).
 
-use crate::domain::{
-    sanitize_untrusted_text, CefrLevel, CorrectionMode, ProviderId, ProviderPreference,
-    SessionError, SessionErrorKind,
+pub use crate::domain::voice_prefs::{
+    validate_english_voice_id, SpeakingSpeed, DEFAULT_ENGLISH_VOICE_ID,
 };
-use serde::{Deserialize, Deserializer, Serialize};
+use crate::domain::{CefrLevel, CorrectionMode, ProviderId, ProviderPreference, SessionError};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-
-pub const DEFAULT_ENGLISH_VOICE_ID: &str = "en-US";
-
-/// Validated speaking speed multiplier (`0.5..=2.0`) (`T038`).
-#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
-#[serde(transparent)]
-pub struct SpeakingSpeed(f32);
-
-impl Default for SpeakingSpeed {
-    fn default() -> Self {
-        Self(1.0)
-    }
-}
-
-impl SpeakingSpeed {
-    pub fn try_new(speed: f32) -> Result<Self, SessionError> {
-        if !(0.5..=2.0).contains(&speed) || speed.is_nan() {
-            return Err(invalid_speed_error(speed));
-        }
-        Ok(Self(speed))
-    }
-
-    pub fn as_f32(self) -> f32 {
-        self.0
-    }
-}
-
-impl<'de> Deserialize<'de> for SpeakingSpeed {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let raw = f32::deserialize(deserializer)?;
-        Self::try_new(raw).map_err(|e| serde::de::Error::custom(e.user_message))
-    }
-}
-
-fn invalid_speed_error(speed: f32) -> SessionError {
-    SessionError::new(
-        SessionErrorKind::TtsFailed,
-        "Speaking speed must be between 0.5x and 2.0x.",
-        true,
-        Some(format!("speaking_speed={speed}")),
-    )
-}
-
-/// Validates that a voice identifier belongs to an English (`en-*` or `default`) voice preset.
-pub fn validate_english_voice_id(raw: &str) -> Result<String, SessionError> {
-    let cleaned = sanitize_untrusted_text(raw);
-    let trimmed = cleaned.trim();
-    if trimmed.is_empty() || trimmed.eq_ignore_ascii_case("default") {
-        return Ok(DEFAULT_ENGLISH_VOICE_ID.to_string());
-    }
-    let lower = trimmed.to_ascii_lowercase();
-    if lower.starts_with("en") || lower.contains("english") {
-        return Ok(trimmed.chars().take(80).collect());
-    }
-    Err(SessionError::new(
-        SessionErrorKind::TtsFailed,
-        "Only English (en-*) voices are supported in FluentDesk AI.",
-        true,
-        Some(format!("english_voice_id={trimmed}")),
-    ))
-}
 
 fn default_english_voice_id() -> String {
     DEFAULT_ENGLISH_VOICE_ID.to_string()
@@ -87,6 +26,8 @@ pub struct LearnerPreferences {
     pub cefr_level: CefrLevel,
     #[serde(default = "default_english_voice_id")]
     pub english_voice_id: String,
+    #[serde(default)]
+    pub pre_conversation_script_enabled: bool,
 }
 
 impl Default for LearnerPreferences {
@@ -101,6 +42,7 @@ impl Default for LearnerPreferences {
             model_overrides: HashMap::new(),
             cefr_level: CefrLevel::default(),
             english_voice_id: default_english_voice_id(),
+            pre_conversation_script_enabled: false,
         }
     }
 }
@@ -121,6 +63,8 @@ pub struct LearnerPreferencesPatch {
     pub cefr_level: Option<CefrLevel>,
     #[serde(default)]
     pub english_voice_id: Option<String>,
+    #[serde(default)]
+    pub pre_conversation_script_enabled: Option<bool>,
 }
 
 impl LearnerPreferences {
@@ -170,6 +114,12 @@ impl LearnerPreferences {
         }
         if let Some(cefr) = patch.cefr_level {
             self.cefr_level = cefr;
+        }
+        if let Some(script) = patch.pre_conversation_script_enabled {
+            self.pre_conversation_script_enabled = script;
+        }
+        if let Some(script) = patch.pre_conversation_script_enabled {
+            self.pre_conversation_script_enabled = script;
         }
     }
 

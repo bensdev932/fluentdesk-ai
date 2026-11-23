@@ -104,12 +104,14 @@ async fn preferences_store_validates_speed_resets_cloud_provider_and_persists_ac
             model_overrides: HashMap::from([(ProviderId::Gemini, "gemini-3.5-flash".into())]),
             cefr_level: Some(CefrLevel::C1),
             english_voice_id: Some("en-GB".into()),
+            pre_conversation_script_enabled: Some(true),
         })
         .await
         .expect("patch valid");
     assert_eq!(enabled.preferred_provider, ProviderPreference::Gemini);
     assert_eq!(enabled.cefr_level, CefrLevel::C1);
     assert_eq!(enabled.english_voice_id, "en-GB");
+    assert!(enabled.pre_conversation_script_enabled);
 
     let reset = store1
         .patch_preferences(LearnerPreferencesPatch {
@@ -127,6 +129,7 @@ async fn preferences_store_validates_speed_resets_cloud_provider_and_persists_ac
     let reloaded = store2.get_preferences().await.expect("reload");
     assert_eq!(reloaded.correction_mode, CorrectionMode::Detailed);
     assert_eq!(reloaded.cefr_level, CefrLevel::C1);
+    assert!(reloaded.pre_conversation_script_enabled);
     assert_eq!(reloaded.speaking_speed.as_f32(), 1.35);
     assert!(reloaded.push_to_talk_enabled && reloaded.raw_audio_recording_opt_in);
     assert!(!reloaded.cloud_opt_in);
@@ -149,4 +152,5 @@ async fn memory_pool_migration_002_is_idempotent() {
     let store = LearnerPreferencesStore::new(SessionRepository::new(pool));
     let prefs = store.get_preferences().await.unwrap();
     assert_eq!(prefs.preferred_provider, ProviderPreference::Auto);
+    assert!(!prefs.pre_conversation_script_enabled);
 }

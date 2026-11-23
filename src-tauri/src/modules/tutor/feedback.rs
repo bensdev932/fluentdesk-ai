@@ -3,7 +3,9 @@
 use crate::domain::{
     sanitize_untrusted_text, CorrectionMode, SessionError, SessionErrorKind, TutorReply,
 };
-use crate::modules::tutor::feedback_guard::{clean_non_placeholder, resolve_structured_feedback};
+use crate::modules::tutor::feedback_guard::{
+    clean_non_placeholder, clean_suggested_replies, resolve_structured_feedback,
+};
 use crate::modules::tutor::stream_parser::SpokenJsonStreamParser;
 use serde::Deserialize;
 
@@ -24,6 +26,8 @@ struct RawTutorJson {
     follow_up_prompt: Option<String>,
     #[serde(default, alias = "completed_goal_ids")]
     completed_goal_ids: Vec<String>,
+    #[serde(default, alias = "suggested_replies")]
+    suggested_replies: Vec<String>,
 }
 
 /// Parses untrusted LLM output as structured JSON and falls back cleanly on plain text (`T032`).
@@ -87,11 +91,13 @@ fn build_validated_reply(
     );
     let follow_up = resolve_follow_up(&parsed.spoken_reply, parsed.follow_up_prompt);
     let goals = sanitize_goal_ids(parsed.completed_goal_ids);
+    let suggested = clean_suggested_replies(parsed.suggested_replies);
     TutorReply::new_validated(parsed.spoken_reply, fb.legacy_summary, follow_up)
         .map(|reply| {
             reply
                 .with_structured_feedback(fb.proper_way, fb.why)
                 .with_completed_goals(goals)
+                .with_suggested_replies(suggested)
         })
         .map_err(map_empty_reply_error)
 }

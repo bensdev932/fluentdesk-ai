@@ -187,14 +187,12 @@ export function createSpeakingSessionClient(opts: SpeakingSessionClientOptions =
       if (patch.speakingSpeed !== undefined) rt.speakingSpeed = patch.speakingSpeed;
       if (patch.englishVoiceId !== undefined) rt.englishVoiceId = patch.englishVoiceId;
       if (patch.correctionMode && rt.active && rt.active.state !== 'Ended' && rt.active.state !== 'Idle') rt.active.correctionMode = patch.correctionMode;
+      if (patch.cefrLevel && rt.active?.scaffold && rt.active.state !== 'Ended' && rt.active.state !== 'Idle') rt.active.scaffold = { ...rt.active.scaffold, cefrLevel: patch.cefrLevel };
       const res = await requestJson<LearnerPreferencesView>(apiUrl('/api/preferences', rt.baseUrl), { method: 'PATCH', body: patch });
       const updated = res.ok ? res.data : res.unreachable ? saveLocalPreferences(patch, rt.offlinePrefs) : null;
       if (updated) { rt.speakingSpeed = updated.speakingSpeed; rt.englishVoiceId = updated.englishVoiceId || 'en-US'; }
       return updated;
     },
-    replayTutorSpeech: (text, rateOverride) => {
-      rt.stopSpeech?.(); cancelBrowserSpeech();
-      rt.stopSpeech = speakWithRuntimePrefs(rt, text, rateOverride).stop;
-    },
+    replayTutorSpeech: (text, rateOverride) => { rt.stopSpeech?.(); cancelBrowserSpeech(); rt.stopSpeech = speakWithRuntimePrefs(rt, text, rateOverride).stop; },
   };
 }

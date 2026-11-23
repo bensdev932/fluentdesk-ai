@@ -72,4 +72,31 @@ async fn preferences_endpoints_validate_speed_inherit_session_defaults_and_sync_
     assert_eq!(ss, 200);
     assert_eq!(started["correctionMode"].as_str(), Some("Gentle"));
     assert_eq!(started["pushToTalk"].as_bool(), Some(true));
+
+    let (_, _, a1_prefs) = http_json(
+        bridge,
+        "PATCH",
+        "/api/preferences",
+        r#"{"cefrLevel":"A1","preConversationScriptEnabled":true}"#,
+    )
+    .await;
+    assert_eq!(a1_prefs["cefrLevel"].as_str(), Some("A1"));
+    assert_eq!(
+        a1_prefs["preConversationScriptEnabled"].as_bool(),
+        Some(true)
+    );
+    let sid = started["sessionId"].as_str().unwrap();
+    let (_, _, mid_status) =
+        http_json(bridge, "GET", &format!("/api/sessions/{sid}/status"), "").await;
+    assert_eq!(mid_status["cefrLevel"].as_str(), Some("A1"));
+
+    let (j_st, _, job_started) = http_json(
+        bridge,
+        "POST",
+        "/api/sessions",
+        r#"{"scenarioId":"job_interview"}"#,
+    )
+    .await;
+    assert_eq!(j_st, 200);
+    assert_eq!(job_started["cefrLevel"].as_str(), Some("A1"));
 }

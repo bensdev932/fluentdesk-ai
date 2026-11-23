@@ -68,13 +68,51 @@ export const DEFAULT_ROLEPLAY_SCENARIOS: RoleplayScenario[] = [
 ];
 
 const SCENARIO_OPENERS: Record<string, TutorReply> = {
-  cafe_order: { spokenReply: 'Good morning! Welcome to Sunrise Cafe. What can I get started for you today?', followUpPrompt: 'What drink or size would you like to order?' },
-  job_interview: { spokenReply: 'Hello and welcome! Thank you for joining this interview today. Could you start by introducing yourself and your background?', followUpPrompt: 'How would you introduce your recent experience?' },
-  polite_decline: { spokenReply: 'Hey! I am hosting a late dinner party this Sunday night and would love for you to come. Can you make it?', followUpPrompt: 'How can you thank them and politely decline?' },
-  hotel_checkin: { spokenReply: 'Good evening, welcome to the Grand Harbor Hotel! How may I help you check in today?', followUpPrompt: 'Could you share your reservation details?' },
-  restaurant_dining: { spokenReply: "Welcome to The Olive Table! Here is your menu. Would you like to hear today's specials before you order?", followUpPrompt: 'What would you like to ask the server first?' },
-  doctor_pharmacy: { spokenReply: 'Hello! Welcome to the clinic pharmacy. Tell me how you are feeling today and how I can help.', followUpPrompt: 'What symptoms have you been experiencing?' },
-  team_standup: { spokenReply: "Good morning! Let's kick off our daily standup. How did your work go yesterday, and what is your main priority today?", followUpPrompt: 'What progress or blocker would you like to share?' },
+  cafe_order: {
+    spokenReply: 'Morning! Welcome to Sunrise Cafe. What can I get started for you?',
+    followUpPrompt: 'What drink or size sounds good today?',
+    suggestedReplies: ['Could I get a medium iced latte, please?', "I'll have a hot black coffee.", 'What pastries do you have today?'],
+  },
+  job_interview: {
+    spokenReply: "Hi, thanks so much for hopping on today! Could you start by telling me a bit about yourself?",
+    followUpPrompt: 'What kind of work have you been focused on lately?',
+    suggestedReplies: ['Sure! I have two years of software experience.', "I'm looking for a role where I can grow my skills.", 'Lately I worked on a customer portal project.'],
+  },
+  polite_decline: {
+    spokenReply: "Hey! I'm throwing a dinner party this Sunday night and would love for you to come. Can you make it?",
+    followUpPrompt: 'How can you thank them and turn it down nicely?',
+    suggestedReplies: ["Thanks so much for inviting me, but I'm busy Sunday.", "That sounds fun! Sadly I already have plans.", "Wish I could make it — maybe next weekend?"],
+  },
+  hotel_checkin: {
+    spokenReply: 'Good evening, welcome to the Grand Harbor Hotel! Checking in tonight?',
+    followUpPrompt: 'Could you share the name on your booking?',
+    suggestedReplies: ['Hi! Yes, I have a reservation under my name.', "I'm checking in for two nights.", 'Could I get a quiet room if possible?'],
+  },
+  restaurant_dining: {
+    spokenReply: "Welcome to The Olive Table! Here's your menu. Can I get you started with water or today's specials?",
+    followUpPrompt: 'What would you like to ask your server first?',
+    suggestedReplies: ["I'd love to hear today's specials!", 'Could we start with two glasses of water?', 'Does the soup have any nuts or dairy?'],
+  },
+  doctor_pharmacy: {
+    spokenReply: 'Hi there, welcome to the pharmacy. What brings you in today — how are you feeling?',
+    followUpPrompt: 'What symptoms have you been having?',
+    suggestedReplies: ["I've had a sore throat since yesterday.", 'Do you have something mild for a headache?', 'How many times a day should I take this?'],
+  },
+  team_standup: {
+    spokenReply: "Morning! Let's jump into standup. How did yesterday go, and what's your priority today?",
+    followUpPrompt: 'Any progress or blockers to share?',
+    suggestedReplies: ['Yesterday I fixed the login bug. Today I am testing.', "I'm waiting on a code review for my PR.", 'Everything is on track for Friday!'],
+  },
+};
+
+const BASIC_SCENARIO_OPENERS: Record<string, TutorReply> = {
+  cafe_order: { spokenReply: 'Hi! Welcome to Sunrise Cafe. What can I get you today?', followUpPrompt: 'Coffee, tea, or food?', suggestedReplies: ['Hi! Can I get a coffee, please?', 'One iced tea, please.', 'Do you have any cake?'] },
+  job_interview: { spokenReply: 'Hi, nice to meet you! Can you tell me a little about you?', followUpPrompt: 'Where do you work or study?', suggestedReplies: ['Hi! Nice to meet you too.', 'I work in tech support.', 'I am good at helping people.'] },
+  polite_decline: { spokenReply: "Hey! I'm having dinner this Sunday. Can you come?", followUpPrompt: 'How can you say no nicely?', suggestedReplies: ["Thanks, but I'm busy Sunday.", "Sorry, I can't come this time.", 'Maybe next week!'] },
+  hotel_checkin: { spokenReply: 'Hi! Welcome to our hotel. Checking in?', followUpPrompt: "What's your name, please?", suggestedReplies: ['Yes, I have a booking.', 'My name is Alex.', 'Is breakfast free?'] },
+  restaurant_dining: { spokenReply: "Hi! Here's your menu. Would you like some water first?", followUpPrompt: 'What do you want to eat or drink?', suggestedReplies: ['Yes, water please.', 'Can I see the specials?', 'I want the grilled chicken, please.'] },
+  doctor_pharmacy: { spokenReply: 'Hi! How do you feel today?', followUpPrompt: 'What hurts right now?', suggestedReplies: ['I have a headache.', 'I have a cough since Monday.', 'Can you give me medicine for a cold?'] },
+  team_standup: { spokenReply: "Morning! What did you do yesterday, and what's today's plan?", followUpPrompt: 'What are you working on?', suggestedReplies: ['Yesterday I finished my page.', 'Today I will test the app.', 'I need a little help with one bug.'] },
 };
 
 export function findFallbackScenario(id?: string): RoleplayScenario {
@@ -82,14 +120,19 @@ export function findFallbackScenario(id?: string): RoleplayScenario {
   return DEFAULT_ROLEPLAY_SCENARIOS.find((s) => s.id.toLowerCase() === target) ?? DEFAULT_ROLEPLAY_SCENARIOS[0];
 }
 
-export function buildOfflineScenarioOpener(scenarioId?: string, topic?: string): TutorReply {
+export function buildOfflineScenarioOpener(scenarioId?: string, topic?: string, cefrLevel?: CefrLevel): TutorReply {
+  const basic = cefrLevel === 'A1' || cefrLevel === 'A2';
+  if (scenarioId && basic && BASIC_SCENARIO_OPENERS[scenarioId]) return BASIC_SCENARIO_OPENERS[scenarioId];
   if (scenarioId && SCENARIO_OPENERS[scenarioId]) return SCENARIO_OPENERS[scenarioId];
   const cleanTopic = (topic ?? '').trim();
   const hasCustomTopic = cleanTopic.length > 0 && cleanTopic.toLowerCase() !== 'everyday conversation' && cleanTopic.toLowerCase() !== 'free conversation';
   return {
     spokenReply: hasCustomTopic
-      ? `Hi there! Let's practice speaking English about ${cleanTopic}. What comes to mind first?`
-      : 'Hi there! I am your English speaking tutor. How is your day going, and what would you like to talk about?',
-    followUpPrompt: 'How is your day going so far?',
+      ? `Hey! Let's chat about ${cleanTopic}. What comes to mind first?`
+      : basic ? "Hi! Nice to meet you. How's your day going?" : "Hey there! Glad we're chatting today. How's your day going so far?",
+    followUpPrompt: basic ? 'How are you today?' : "What's been the best part of your day?",
+    suggestedReplies: basic
+      ? ["I'm good, thanks! How about you?", 'Today was pretty good.', 'Let us talk about my hobby.']
+      : ['Pretty good so far! I grabbed coffee earlier.', "It's been busy, actually — I'm glad to take a break.", 'Let us talk about weekend plans!'],
   };
 }

@@ -123,6 +123,8 @@ pub struct TutorReply {
     pub follow_up_prompt: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub completed_goal_ids: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub suggested_replies: Vec<String>,
 }
 
 impl TutorReply {
@@ -142,6 +144,7 @@ impl TutorReply {
             why: None,
             follow_up_prompt: clean_optional_text(follow_up_prompt),
             completed_goal_ids: Vec::new(),
+            suggested_replies: Vec::new(),
         })
     }
 
@@ -157,6 +160,11 @@ impl TutorReply {
 
     pub fn with_completed_goals(mut self, ids: Vec<String>) -> Self {
         self.completed_goal_ids = ids;
+        self
+    }
+
+    pub fn with_suggested_replies(mut self, replies: Vec<String>) -> Self {
+        self.suggested_replies = replies;
         self
     }
 }

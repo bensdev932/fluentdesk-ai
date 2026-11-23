@@ -41,6 +41,10 @@ pub fn map_preferences_row(row: &SqliteRow) -> Result<LearnerPreferences, Sessio
         model_overrides: parse_model_overrides(&overrides_json),
         cefr_level: CefrLevel::from_str(&cefr_str).unwrap_or_default(),
         english_voice_id,
+        pre_conversation_script_enabled: row
+            .try_get::<i64, _>("pre_conversation_script_enabled")
+            .unwrap_or(0)
+            != 0,
     };
     prefs.enforce_cloud_consent_invariant();
     Ok(prefs)

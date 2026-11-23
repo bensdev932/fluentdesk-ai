@@ -3,20 +3,12 @@ import type { Page, Route } from '@playwright/test';
 export interface RecordedRequests {
   turnModes: string[];
   preferencePatches: Array<Record<string, unknown>>;
+  startedCefrLevels: Array<string | undefined>;
 }
 
 const SCENARIOS = [
-  {
-    id: 'cafe_order',
-    title: 'Cafe Ordering',
-    summary: 'Order drinks politely at a neighborhood cafe.',
-    tutorPersona: 'Friendly barista',
-    learnerRole: 'Customer',
-    defaultCefr: 'A2',
-    defaultMaxTurns: 4,
-    targetVocabulary: ['latte', 'iced', 'receipt'],
-    goals: [{ id: 'order_drink', description: 'Order a drink cleanly', keywords: ['latte', 'coffee'] }],
-  },
+  { id: 'cafe_order', title: 'Cafe Ordering', summary: 'Order drinks politely at a neighborhood cafe.', tutorPersona: 'Friendly barista', learnerRole: 'Customer', defaultCefr: 'A2', defaultMaxTurns: 4, targetVocabulary: ['latte', 'iced', 'receipt'], goals: [{ id: 'order_drink', description: 'Order a drink cleanly', keywords: ['latte', 'coffee'] }] },
+  { id: 'job_interview', title: 'Job Interview Prep', summary: 'Introduce your background clearly in an interview.', tutorPersona: 'Hiring manager', learnerRole: 'Candidate', defaultCefr: 'B2', defaultMaxTurns: 5, targetVocabulary: ['experience', 'teamwork', 'project'], goals: [{ id: 'intro', description: 'Introduce your experience', keywords: ['experience', 'role'] }] },
 ];
 
 function jsonReply(route: Route, data: unknown, status = 200): Promise<void> {
@@ -24,8 +16,8 @@ function jsonReply(route: Route, data: unknown, status = 200): Promise<void> {
 }
 
 export async function setupAdaptiveCoachingStubs(page: Page): Promise<RecordedRequests> {
-  const recorded: RecordedRequests = { turnModes: [], preferencePatches: [] };
-  let prefs = { correctionMode: 'Gentle', speakingSpeed: 1.0, pushToTalkEnabled: false, cefrLevel: 'A2', englishVoiceId: 'en-US' };
+  const recorded: RecordedRequests = { turnModes: [], preferencePatches: [], startedCefrLevels: [] };
+  let prefs: Record<string, unknown> = { correctionMode: 'Gentle', speakingSpeed: 1.0, pushToTalkEnabled: false, cefrLevel: 'A2', englishVoiceId: 'en-US', preConversationScriptEnabled: false };
   const focuses: string[] = [];
   let sessSeq = 0;
   let activeSessId = 'e2e-sess-1';
@@ -112,7 +104,10 @@ export async function setupAdaptiveCoachingStubs(page: Page): Promise<RecordedRe
       sessSeq += 1;
       activeSessId = `e2e-sess-${sessSeq}`;
       seq = 0;
-      const body = req.postDataJSON() as { correctionMode?: string };
+      const body = req.postDataJSON() as { correctionMode?: string; cefrLevel?: string; scenarioId?: string };
+      const level = body.cefrLevel ?? String(prefs.cefrLevel ?? 'A2');
+      recorded.startedCefrLevels.push(body.cefrLevel);
+      const picked = SCENARIOS.find((s) => s.id === body.scenarioId) ?? SCENARIOS[0];
       return jsonReply(route, {
         sessionId: activeSessId,
         state: 'Listening',
@@ -120,14 +115,17 @@ export async function setupAdaptiveCoachingStubs(page: Page): Promise<RecordedRe
         pushToTalk: false,
         phase: 'Opener',
         turnCount: 0,
-        maxTurns: 4,
-        cefrLevel: 'A2',
-        topic: 'Cafe Ordering',
-        scenarioId: 'cafe_order',
-        targetVocabulary: ['latte', 'iced', 'receipt'],
-        goals: SCENARIOS[0].goals,
+        maxTurns: picked.defaultMaxTurns,
+        cefrLevel: level,
+        topic: picked.title,
+        scenarioId: picked.id,
+        targetVocabulary: picked.targetVocabulary,
+        goals: picked.goals,
         completedGoalIds: [],
-        openerReply: { spokenReply: 'Welcome to Sunrise Cafe! What can I get for you?' },
+        openerReply: {
+          spokenReply: 'Welcome to Sunrise Cafe! What can I get for you?',
+          suggestedReplies: ['Can I get an iced latte, please?', 'Just a black coffee, thanks.'],
+        },
       });
     }
     if (path.endsWith('/turn') && method === 'POST') {
@@ -135,7 +133,7 @@ export async function setupAdaptiveCoachingStubs(page: Page): Promise<RecordedRe
       recorded.turnModes.push(body.correctionMode);
       seq += 1;
       const lower = body.userText.toLowerCase();
-      let reply: Record<string, unknown> = { spokenReply: 'Got it, iced works great! Anything else today?' };
+      let reply: Record<string, unknown> = { spokenReply: 'Got it, iced works great! Anything else today?', suggestedReplies: ['That will be all, thanks!'] };
       if (lower.includes('give me')) {
         reply = {
           spokenReply: 'One medium latte coming right up! Hot or iced?',
@@ -143,6 +141,7 @@ export async function setupAdaptiveCoachingStubs(page: Page): Promise<RecordedRe
           why: "At a cafe counter, 'Could I get...' sounds warmer than 'Give me...'.",
           correction: "Could I get a medium latte, please? — At a cafe counter, 'Could I get...' sounds warmer than 'Give me...'.",
           followUpPrompt: 'Hot or iced?',
+          suggestedReplies: ['Iced, please!', 'Hot is great, thanks.'],
         };
         focuses.push(String(reply.correction));
       } else if (lower.includes('legacy')) {
@@ -159,7 +158,7 @@ export async function setupAdaptiveCoachingStubs(page: Page): Promise<RecordedRe
         phase: seq === 1 ? 'FirstQuestion' : 'TopicExchange',
         turnCount: seq,
         maxTurns: 4,
-        cefrLevel: 'A2',
+        cefrLevel: String(prefs.cefrLevel ?? 'A2'),
         topic: 'Cafe Ordering',
       });
     }

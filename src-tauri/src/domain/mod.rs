@@ -14,6 +14,7 @@ pub mod scenario_openers;
 mod scenario_presets;
 mod scenario_presets_extra;
 pub mod session;
+pub mod voice_prefs;
 
 #[cfg(test)]
 mod pedagogy_tests;
@@ -32,3 +33,4 @@ pub use review::*;
 pub use scenario::*;
 pub use scenario_openers::*;
 pub use session::*;
+pub use voice_prefs::*;

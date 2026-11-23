@@ -7,6 +7,7 @@ import './styles/layout.css';
 import './styles/controls.css';
 import './styles/panels.css';
 import './styles/providers.css';
+import './styles/scripts.css';
 
 const sessionClient = createSpeakingSessionClient();
 

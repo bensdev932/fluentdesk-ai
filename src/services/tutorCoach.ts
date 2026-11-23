@@ -146,22 +146,41 @@ export function generateTutorCoachingReply(
 
   let spokenReply: string;
   let followUpPrompt: string;
+  let suggestedReplies: string[];
   if (keywords.length === 0) {
     spokenReply = priorAnchor
-      ? `Following up on ${priorAnchor} — what happened next regarding ${priorAnchor}?`
-      : `You started with "${cleaned}" — what specific moment or topic from your day would you like to talk through?`;
+      ? `Speaking of ${priorAnchor}, what happened next with ${priorAnchor}?`
+      : `Got it! Tell me a bit more about what you've been up to today.`;
     followUpPrompt = priorAnchor
-      ? `Describe one concrete detail about ${priorAnchor} in a full sentence.`
-      : 'Pick one event, project, or plan and explain it in two sentences.';
+      ? `What's one quick detail about ${priorAnchor}?`
+      : 'What happened earlier today, or what are you working on?';
+    suggestedReplies = priorAnchor
+      ? [`About ${priorAnchor}, it went really well!`, `We decided to keep going after that.`, `Actually, let's switch to another topic.`]
+      : ['Today was pretty busy, actually.', 'I got a coffee and caught up on work.', "Nothing much — how's your day going?"];
   } else if (priorAnchor) {
-    spokenReply = `Connecting that back to ${priorAnchor}, ${lowercaseLeadingPronoun(focus)} changes the story! How did things turn out regarding ${topicAnchor}?`;
-    followUpPrompt = `Explain what happened between ${priorAnchor} and ${topicAnchor} next.`;
+    spokenReply = `Oh nice — thinking back to ${priorAnchor}, ${lowercaseLeadingPronoun(focus)} sounds like a great moment! How did ${topicAnchor} turn out?`;
+    followUpPrompt = `How did ${priorAnchor} connect with ${topicAnchor} for you?`;
+    suggestedReplies = [
+      `Honestly, ${topicAnchor} was my favorite part!`,
+      `After ${priorAnchor}, we spent more time enjoying ${topicAnchor}.`,
+      `I want to try ${topicAnchor} again next time.`,
+    ];
   } else if (grammar) {
-    spokenReply = `Sounds like your time around ${focus} kept things eventful. What was the main takeaway regarding ${topicAnchor}?`;
-    followUpPrompt = `Try retelling one more detail about ${topicAnchor} using the corrected verb tense.`;
+    spokenReply = `Gotcha! Sounds like things were busy with ${focus}. How did ${topicAnchor} turn out?`;
+    followUpPrompt = `What happened right after that with ${topicAnchor}?`;
+    suggestedReplies = [
+      `It turned out great in the end.`,
+      `I also want to get better at talking about ${topicAnchor}.`,
+      `Wait — could you say that sentence in a more natural way?`,
+    ];
   } else {
-    spokenReply = `${capitalize(focus)} — what an engaging detail! What led up to ${topicAnchor} or happened right after?`;
-    followUpPrompt = `Describe ${topicAnchor} from another angle or share who else was involved.`;
+    spokenReply = `Oh nice! ${capitalize(focus)} sounds great. What stood out most about ${topicAnchor}?`;
+    followUpPrompt = `What else happened around ${topicAnchor}?`;
+    suggestedReplies = [
+      `The best part about ${topicAnchor} was how relaxed it felt.`,
+      `I actually learned something new from it.`,
+      `Who else were you with? Tell me what you'd say next!`,
+    ];
   }
 
   const correction = mode === 'Off'
@@ -169,12 +188,13 @@ export function generateTutorCoachingReply(
     : grammar
       ? mode === 'Detailed' ? grammar.detailed : mode === 'Gentle' ? grammar.gentle : undefined
       : mode === 'Detailed' && keywords.length > 0
-        ? `Clear phrasing around "${topicAnchor}". Try expanding with a specific time, place, or reason next.`
+        ? `Natural phrasing around "${topicAnchor}". Try adding a quick time or reason to keep it flowing.`
         : undefined;
 
   return {
     spokenReply,
     ...(correction ? { correction } : {}),
     followUpPrompt,
+    suggestedReplies,
   };
 }

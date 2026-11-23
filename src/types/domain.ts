@@ -94,6 +94,7 @@ export interface LearnerPreferencesView {
   pushToTalkEnabled: boolean;
   cefrLevel: CefrLevel;
   englishVoiceId: string;
+  preConversationScriptEnabled?: boolean;
 }
 
 export interface LearnerPreferencesPatch {
@@ -102,6 +103,7 @@ export interface LearnerPreferencesPatch {
   pushToTalkEnabled?: boolean;
   cefrLevel?: CefrLevel;
   englishVoiceId?: string;
+  preConversationScriptEnabled?: boolean;
 }
 
 export type ProviderHealth = 'Available' | 'Unavailable' | 'Misconfigured';
@@ -141,6 +143,7 @@ export interface TutorReply {
   properWay?: string;
   why?: string;
   followUpPrompt?: string;
+  suggestedReplies?: string[];
 }
 
 export type SessionErrorKind =

@@ -85,8 +85,8 @@ impl SessionState {
 /// Tutor correction intensity mode (`plan.md` Section 4, `FR-015`).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum CorrectionMode {
-    #[default]
     Natural,
+    #[default]
     Gentle,
     Detailed,
     Off,

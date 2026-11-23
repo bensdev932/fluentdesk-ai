@@ -42,6 +42,10 @@ pub struct HttpHistoryTurn {
     #[serde(default)]
     pub correction: Option<String>,
     #[serde(default)]
+    pub proper_way: Option<String>,
+    #[serde(default)]
+    pub why: Option<String>,
+    #[serde(default)]
     pub follow_up_prompt: Option<String>,
     #[serde(default)]
     pub timestamp_unix_ms: i64,
@@ -55,6 +59,10 @@ pub struct TutorReplyHttpResponse {
     pub spoken_reply: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub correction: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub proper_way: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub why: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub follow_up_prompt: Option<String>,
     pub provider: ProviderId,
@@ -70,6 +78,8 @@ impl TutorReplyHttpResponse {
         Self {
             spoken_reply: r.reply.spoken_reply,
             correction: r.reply.correction,
+            proper_way: r.reply.proper_way,
+            why: r.reply.why,
             follow_up_prompt: r.reply.follow_up_prompt,
             provider: r.provider,
             model: r.model,
@@ -136,26 +146,25 @@ fn map_history_turn(raw: HttpHistoryTurn) -> Option<ConversationTurn> {
     Some(build_turn_record(raw, session_id, text))
 }
 
+fn opt_sanitized(raw: Option<String>) -> Option<String> {
+    raw.map(|s| sanitize_untrusted_text(&s))
+        .filter(|s| !s.is_empty())
+}
+
 fn build_turn_record(
     raw: HttpHistoryTurn,
     session_id: SessionId,
     text: String,
 ) -> ConversationTurn {
-    let correction = raw
-        .correction
-        .map(|c| sanitize_untrusted_text(&c))
-        .filter(|s| !s.is_empty());
-    let follow_up_prompt = raw
-        .follow_up_prompt
-        .map(|f| sanitize_untrusted_text(&f))
-        .filter(|s| !s.is_empty());
     ConversationTurn {
         id: raw.id,
         session_id,
         role: raw.role,
         text,
-        correction,
-        follow_up_prompt,
+        correction: opt_sanitized(raw.correction),
+        proper_way: opt_sanitized(raw.proper_way),
+        why: opt_sanitized(raw.why),
+        follow_up_prompt: opt_sanitized(raw.follow_up_prompt),
         timestamp_unix_ms: raw.timestamp_unix_ms,
         stage_metadata: raw.stage_metadata,
     }

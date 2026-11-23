@@ -5,12 +5,11 @@ use crate::domain::{
     PedagogicalScaffold, SessionPhase, Transcript,
 };
 use crate::modules::tutor::director_context::format_director_block;
+use crate::modules::tutor::director_rules::{
+    correction_rule, ANTI_FILLER_RULE, ENGAGEMENT_RULE, EVALUATION_RULES, IDENTITY_RULE,
+    JSON_CONTRACT_RULE,
+};
 use crate::modules::tutor::prompts::{ChatMessage, TutorPrompt};
-
-const ENGAGEMENT_RULE: &str =
-    "React directly to the specific details, names, events, or feelings the learner just shared first, and continue naturally from prior turns.";
-const ANTI_FILLER_RULE: &str =
-    "Never use canned filler like 'Thanks for sharing that naturally — your meaning came through clearly!', 'That is interesting!', or 'Could you tell me more about that?'.";
 
 /// Single cohesive director assembling system rules, scenario persona, goals, and dialogue turns.
 pub struct RoleplayDirector;
@@ -48,27 +47,19 @@ fn build_system_instruction(
         .unwrap_or(SessionPhase::Opener);
     let budget = word_budget_for_cefr(scaffold.map(|s| s.cefr_level).unwrap_or_default());
     let mut parts = vec![
-        "You are FluentDesk AI, a voice-first spoken English tutor in character.".to_string(),
+        IDENTITY_RULE.to_string(),
         ENGAGEMENT_RULE.to_string(),
         ANTI_FILLER_RULE.to_string(),
         format!("Keep \"spokenReply\" conversational, voice-friendly, and under ~{budget} words."),
+        EVALUATION_RULES.to_string(),
         correction_rule(mode).to_string(),
         phase_closing_rule(phase).to_string(),
     ];
     if let Some(sc) = scaffold {
         parts.push(format_director_block(sc));
     }
-    parts.push("Return ONLY valid JSON with \"spokenReply\" first and metadata last: {\"spokenReply\":\"...\",\"correction\":null,\"followUpPrompt\":null,\"completedGoalIds\":[]}".to_string());
+    parts.push(JSON_CONTRACT_RULE.to_string());
     parts.join("\n")
-}
-
-fn correction_rule(mode: CorrectionMode) -> &'static str {
-    match mode {
-        CorrectionMode::Natural => "Recast real grammar errors smoothly in \"spokenReply\" and add a brief correction note only for major clarity blockers.",
-        CorrectionMode::Gentle => "Keep \"spokenReply\" warm and provide a brief gentle correction in \"correction\" only for real errors.",
-        CorrectionMode::Detailed => "Respond warmly in \"spokenReply\" and explain key grammar or vocabulary improvements in \"correction\".",
-        CorrectionMode::Off => "Do NOT provide grammar corrections; always set \"correction\" to null.",
-    }
 }
 
 fn phase_closing_rule(phase: SessionPhase) -> &'static str {

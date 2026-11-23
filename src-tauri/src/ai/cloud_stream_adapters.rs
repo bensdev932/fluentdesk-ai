@@ -39,7 +39,7 @@ pub(crate) async fn stream_openai_compat(
         post_sse_stream(provider.build_request(&prompt, cm, true))
     })
     .await?;
-    let ctx = SsePumpCtx::new(pid, model);
+    let ctx = SsePumpCtx::new(pid, model).with_learner_text(&user_transcript.text);
     let retry = Some(OpenAiSseRetry::new(provider.clone(), prompt, accepted));
     Ok(spawn_sse_pump(sse, ctx, mode, extract_openai_delta, retry))
 }
@@ -60,7 +60,7 @@ pub(crate) async fn stream_gemini(
         post_sse_stream(provider.build_stream_request(&prompt, tm))
     })
     .await?;
-    let ctx = SsePumpCtx::new(ProviderId::Gemini, model);
+    let ctx = SsePumpCtx::new(ProviderId::Gemini, model).with_learner_text(&user_transcript.text);
     Ok(spawn_sse_pump(sse, ctx, mode, extract_gemini_delta, None))
 }
 

@@ -171,7 +171,7 @@ async fn open_stream_provider(
             )
             .await
         }
-        ProviderId::Groq | ProviderId::Openrouter => {
+        ProviderId::Groq | ProviderId::Openrouter | ProviderId::Freellmapi => {
             stream_openai_compat(
                 &OpenAiCompatProvider::new(id, url, &model, key),
                 turn.history,

@@ -80,6 +80,10 @@ pub struct ConversationTurn {
     pub role: ConversationRole,
     pub text: String,
     pub correction: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub proper_way: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub why: Option<String>,
     pub follow_up_prompt: Option<String>,
     pub timestamp_unix_ms: i64,
     pub stage_metadata: Option<TurnStageMetadata>,
@@ -112,6 +116,10 @@ pub struct SessionHistoryView {
 pub struct TutorReply {
     pub spoken_reply: String,
     pub correction: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub proper_way: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub why: Option<String>,
     pub follow_up_prompt: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub completed_goal_ids: Vec<String>,
@@ -130,9 +138,21 @@ impl TutorReply {
         Ok(Self {
             spoken_reply: cleaned_spoken,
             correction: clean_optional_text(correction),
+            proper_way: None,
+            why: None,
             follow_up_prompt: clean_optional_text(follow_up_prompt),
             completed_goal_ids: Vec::new(),
         })
+    }
+
+    pub fn with_structured_feedback(
+        mut self,
+        proper_way: Option<String>,
+        why: Option<String>,
+    ) -> Self {
+        self.proper_way = clean_optional_text(proper_way);
+        self.why = clean_optional_text(why);
+        self
     }
 
     pub fn with_completed_goals(mut self, ids: Vec<String>) -> Self {

@@ -91,7 +91,7 @@ impl SessionRepository {
                 user_id, correction_mode, speaking_speed, push_to_talk_enabled, cloud_opt_in,
                 raw_audio_recording_opt_in, preferred_provider, model_overrides_json, cefr_level,
                 english_voice_id, updated_at_unix_ms
-             ) VALUES (?1, 'Natural', 1.0, 0, 0, 0, 'auto', '{}', 'B1', 'en-US', ?2) ON CONFLICT(user_id) DO NOTHING",
+             ) VALUES (?1, 'Gentle', 1.0, 0, 0, 0, 'auto', '{}', 'B1', 'en-US', ?2) ON CONFLICT(user_id) DO NOTHING",
         )
         .bind(user_id).bind(now_ms).execute(&self.pool).await
         .map_err(|e| persistence_err("Failed to initialize learner preferences.", e))?;
@@ -165,17 +165,25 @@ impl SessionRepository {
         sqlx::query(
             "INSERT INTO conversation_turns (
                 id, conversation_id, sequence_number, role, text, correction_text,
-                follow_up_prompt, stt_duration_ms, llm_duration_ms, tts_duration_ms, timestamp_unix_ms
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+                proper_way, feedback_why, follow_up_prompt, stt_duration_ms, llm_duration_ms,
+                tts_duration_ms, timestamp_unix_ms
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
         )
-        .bind(&turn.id).bind(turn.session_id.as_str()).bind(i64::from(seq))
-        .bind(format_role(turn.role)).bind(&turn.text)
-        .bind(&turn.correction).bind(&turn.follow_up_prompt)
+        .bind(&turn.id)
+        .bind(turn.session_id.as_str())
+        .bind(i64::from(seq))
+        .bind(format_role(turn.role))
+        .bind(&turn.text)
+        .bind(&turn.correction)
+        .bind(&turn.proper_way)
+        .bind(&turn.why)
+        .bind(&turn.follow_up_prompt)
         .bind(meta.and_then(|m| m.stt_duration_ms).map(i64::from))
         .bind(meta.and_then(|m| m.llm_duration_ms).map(i64::from))
         .bind(meta.and_then(|m| m.tts_duration_ms).map(i64::from))
         .bind(turn.timestamp_unix_ms)
-        .execute(&self.pool).await
+        .execute(&self.pool)
+        .await
         .map_err(|e| persistence_err("Failed to save conversation turn.", e))?;
         Ok(())
     }

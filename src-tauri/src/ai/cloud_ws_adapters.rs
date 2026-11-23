@@ -45,7 +45,7 @@ pub(crate) async fn stream_openai_compat_ws(
     .await?;
     Ok(spawn_ws_pump(
         ws,
-        SsePumpCtx::new(pid, model),
+        SsePumpCtx::new(pid, model).with_learner_text(&user_transcript.text),
         mode,
         extract_openai_ws_delta,
     ))
@@ -66,7 +66,7 @@ pub(crate) async fn stream_gemini_ws(
     .await?;
     Ok(spawn_ws_pump(
         ws,
-        SsePumpCtx::new(ProviderId::Gemini, model),
+        SsePumpCtx::new(ProviderId::Gemini, model).with_learner_text(&user_transcript.text),
         mode,
         extract_gemini_ws_delta,
     ))

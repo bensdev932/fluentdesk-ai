@@ -151,7 +151,7 @@ async fn outage_and_network_errors_cooldown_and_fall_back_to_ollama() {
     let note = r1.failover_note.unwrap_or_default();
     assert!(note.contains("groq") && note.contains("gemini") && note.contains("openrouter"));
     let snap = router.providers_snapshot().await;
-    for v in snap.providers.iter().filter(|p| p.is_cloud) {
+    for v in snap.providers.iter().filter(|p| p.is_cloud && p.configured) {
         assert!(v.cooldown_secs > 0 && !v.available && !v.auth_invalid);
     }
     let r2 = router
@@ -167,7 +167,11 @@ async fn outage_and_network_errors_cooldown_and_fall_back_to_ollama() {
         .await
         .unwrap();
     let reset_snap = router.providers_snapshot().await;
-    for v in reset_snap.providers.iter().filter(|p| p.is_cloud) {
+    for v in reset_snap
+        .providers
+        .iter()
+        .filter(|p| p.is_cloud && p.configured)
+    {
         assert!(v.cooldown_secs == 0 && v.available);
     }
 }

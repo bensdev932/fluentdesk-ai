@@ -96,6 +96,7 @@ fn looks_like_raw_secret(val: &str) -> bool {
     (val.starts_with("sk-") && val.len() > 5)
         || (val.starts_with("gsk_") && val.len() > 6)
         || (val.starts_with("AIza") && val.len() > 8)
+        || (val.starts_with("freellmapi-") && val.len() > 14)
 }
 
 fn is_secret_key(key: &str) -> bool {

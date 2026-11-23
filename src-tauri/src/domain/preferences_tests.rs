@@ -7,9 +7,9 @@ use crate::domain::{
 use std::collections::HashMap;
 
 #[test]
-fn learner_preferences_defaults_enforce_privacy_and_natural_mode() {
+fn learner_preferences_defaults_enforce_privacy_and_gentle_mode() {
     let prefs = LearnerPreferences::default();
-    assert_eq!(prefs.correction_mode, CorrectionMode::Natural);
+    assert_eq!(prefs.correction_mode, CorrectionMode::Gentle);
     assert_eq!(prefs.speaking_speed.as_f32(), 1.0);
     assert!(!prefs.push_to_talk_enabled);
     assert!(!prefs.cloud_opt_in);
@@ -29,12 +29,12 @@ fn speaking_speed_rejects_out_of_bounds_values_without_mutating_preferences() {
         assert!(SpeakingSpeed::try_new(bad).is_err());
         let res = prefs.apply_patch(LearnerPreferencesPatch {
             speaking_speed: Some(bad),
-            correction_mode: Some(CorrectionMode::Gentle),
+            correction_mode: Some(CorrectionMode::Detailed),
             ..Default::default()
         });
         assert!(res.is_err());
         assert_eq!(prefs.speaking_speed.as_f32(), 1.0);
-        assert_eq!(prefs.correction_mode, CorrectionMode::Natural);
+        assert_eq!(prefs.correction_mode, CorrectionMode::Gentle);
     }
 
     prefs

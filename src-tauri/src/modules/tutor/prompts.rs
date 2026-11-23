@@ -50,6 +50,14 @@ impl TutorPrompt {
     pub fn user_prompt(&self) -> &str {
         &self.user_prompt
     }
+
+    pub fn latest_user_text(&self) -> Option<&str> {
+        self.messages
+            .iter()
+            .rev()
+            .find(|m| m.role == ConversationRole::User)
+            .map(|m| m.content.as_str())
+    }
 }
 
 /// Assembles a voice-first tutor prompt from bounded conversation history and learner transcript.

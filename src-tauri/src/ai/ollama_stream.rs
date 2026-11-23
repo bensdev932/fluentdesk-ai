@@ -8,37 +8,31 @@ use crate::ai::{
         connect_with_timeout, format_http_request, io_err, ollama_service_err, parse_err,
         serialize_generate_request_with_stream, timeout_err, OLLAMA_GENERATE_TIMEOUT_SECS,
     },
-    ollama_http_codec::{bad_http_err, check_status_with_body},
+    ollama_http_codec::{
+        bad_http_err, check_status_with_body, OllamaStreamChunk,
+        StreamTimeouts as HttpStreamTimeouts,
+    },
     provider::{TutorReplyStream, TutorStreamItem},
     router_types::RoutedTutorReply,
 };
 use crate::domain::{CorrectionMode, SessionError};
 use crate::modules::tutor::{
-    feedback::parse_tutor_response_or_fallback, prompts::TutorPrompt,
+    feedback::parse_tutor_response_for_utterance, prompts::TutorPrompt,
     stream_parser::SpokenJsonStreamParser,
 };
-use serde::Deserialize;
 use std::time::Duration;
 use tokio::io::AsyncWriteExt;
 use tokio::sync::mpsc;
 
+pub(crate) type StreamTimeouts = HttpStreamTimeouts;
+
 const OLLAMA_STREAM_IDLE_TIMEOUT_SECS: u64 = 25;
 type StreamTx = mpsc::Sender<Result<TutorStreamItem, SessionError>>;
 
-#[derive(Deserialize)]
-struct OllamaStreamChunk {
-    #[serde(default)]
-    response: String,
-    #[serde(default)]
-    done: bool,
-    #[serde(default)]
-    error: Option<String>,
-}
-
-#[derive(Clone, Copy)]
-pub(crate) struct StreamTimeouts {
-    pub first: Duration,
-    pub idle: Duration,
+struct StreamTarget {
+    model: String,
+    mode: CorrectionMode,
+    learner_text: Option<String>,
 }
 
 /// Connects to Ollama with `stream: true`, validates HTTP status, and streams spoken sentences.
@@ -65,9 +59,13 @@ pub(crate) async fn stream_ollama_completion_with_timeouts(
     let raw_req = format_http_request(&addr, "POST", "/api/generate", &payload);
     let mut reader = open_ollama_stream(&addr, &raw_req, timeouts.first).await?;
     let (tx, rx) = mpsc::channel(16);
-    let model = cfg.model_name().to_string();
+    let target = StreamTarget {
+        model: cfg.model_name().to_string(),
+        mode,
+        learner_text: prompt.latest_user_text().map(str::to_string),
+    };
     tokio::spawn(async move {
-        let _ = pump_ollama_lines(&mut reader, &tx, &model, mode, timeouts).await;
+        let _ = pump_ollama_lines(&mut reader, &tx, &target, timeouts).await;
     });
     Ok(rx)
 }
@@ -97,8 +95,7 @@ async fn open_ollama_stream(
 async fn pump_ollama_lines(
     reader: &mut HttpLineReader,
     tx: &StreamTx,
-    model: &str,
-    mode: CorrectionMode,
+    target: &StreamTarget,
     timeouts: StreamTimeouts,
 ) -> Result<(), ()> {
     let (mut parser, mut saw_chunk) = (SpokenJsonStreamParser::new(), false);
@@ -120,7 +117,7 @@ async fn pump_ollama_lines(
             break;
         }
     }
-    emit_ollama_final(parser, tx, model, mode).await
+    emit_ollama_final(parser, tx, target).await
 }
 
 async fn read_next_line_or_err(
@@ -159,20 +156,22 @@ async fn process_ndjson_line(
 async fn emit_ollama_final(
     parser: SpokenJsonStreamParser,
     tx: &StreamTx,
-    model: &str,
-    mode: CorrectionMode,
+    target: &StreamTarget,
 ) -> Result<(), ()> {
     let (tail, raw) = parser.finish();
     send_sentences(tail, tx).await?;
-    let item = parse_tutor_response_or_fallback(&raw, mode).map(|reply| {
-        TutorStreamItem::Final(RoutedTutorReply {
-            reply,
-            provider: ProviderId::Ollama,
-            model: model.to_string(),
-            is_cloud: false,
-            failover_note: None,
-        })
-    });
+    let item =
+        parse_tutor_response_for_utterance(&raw, target.mode, target.learner_text.as_deref()).map(
+            |reply| {
+                TutorStreamItem::Final(RoutedTutorReply {
+                    reply,
+                    provider: ProviderId::Ollama,
+                    model: target.model.clone(),
+                    is_cloud: false,
+                    failover_note: None,
+                })
+            },
+        );
     let _ = tx.send(item).await;
     Ok(())
 }

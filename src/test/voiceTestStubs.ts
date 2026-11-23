@@ -41,7 +41,7 @@ export function createFakeSpeakingSessionPort(opts: FakePortOptions = {}): Speak
   let seq = 0;
   let activeId = 'fake-sess-0';
   let state: SessionState = 'Idle';
-  let mode: CorrectionMode = 'Natural';
+  let mode: CorrectionMode = 'Gentle';
   let pushToTalk = false;
   let aborted = false;
 
@@ -68,6 +68,8 @@ export function createFakeSpeakingSessionPort(opts: FakePortOptions = {}): Speak
     const tutorTurn: ConversationTurn = {
       id: `t-${now + 1}-${Math.random()}`, sessionId: sid, role: 'Tutor', text: reply.spokenReply,
       ...(reply.correction ? { correction: reply.correction } : {}),
+      ...(reply.properWay ? { properWay: reply.properWay } : {}),
+      ...(reply.why ? { why: reply.why } : {}),
       ...(reply.followUpPrompt ? { followUpPrompt: reply.followUpPrompt } : {}),
       timestampUnixMs: now + 1,
     };

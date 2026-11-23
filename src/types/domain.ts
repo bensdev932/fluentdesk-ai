@@ -6,38 +6,19 @@
 export type SessionId = string;
 
 export const SESSION_STATES = [
-  'Idle',
-  'Initializing',
-  'Listening',
-  'Processing',
-  'Thinking',
-  'Speaking',
-  'Paused',
-  'Error',
-  'Ended',
+  'Idle', 'Initializing', 'Listening', 'Processing', 'Thinking', 'Speaking', 'Paused', 'Error', 'Ended',
 ] as const;
 
 export type SessionState = (typeof SESSION_STATES)[number];
 
-export const CORRECTION_MODES = [
-  'Natural',
-  'Gentle',
-  'Detailed',
-  'Off',
-] as const;
+export const CORRECTION_MODES = ['Natural', 'Gentle', 'Detailed', 'Off'] as const;
 
 export type CorrectionMode = (typeof CORRECTION_MODES)[number];
 
 export const CEFR_LEVELS = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'] as const;
 export type CefrLevel = (typeof CEFR_LEVELS)[number];
 
-export const SESSION_PHASES = [
-  'Opener',
-  'FirstQuestion',
-  'TopicExchange',
-  'Closer',
-  'Completed',
-] as const;
+export const SESSION_PHASES = ['Opener', 'FirstQuestion', 'TopicExchange', 'Closer', 'Completed'] as const;
 export type SessionPhase = (typeof SESSION_PHASES)[number];
 
 export interface CommunicativeGoal {
@@ -147,6 +128,8 @@ export interface ConversationTurn {
   role: ConversationRole;
   text: string;
   correction?: string;
+  properWay?: string;
+  why?: string;
   followUpPrompt?: string;
   timestampUnixMs: number;
   stageMetadata?: TurnStageMetadata;
@@ -155,6 +138,8 @@ export interface ConversationTurn {
 export interface TutorReply {
   spokenReply: string;
   correction?: string;
+  properWay?: string;
+  why?: string;
   followUpPrompt?: string;
 }
 

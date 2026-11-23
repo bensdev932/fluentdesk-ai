@@ -79,7 +79,7 @@ fn attach_cors_and_close(headers: &mut HeaderMap) {
     headers.insert(
         ACCESS_CONTROL_ALLOW_HEADERS,
         HeaderValue::from_static(
-            "Content-Type, X-Learner-Id, X-Byok-Groq, X-Byok-Gemini, X-Byok-Openrouter",
+            "Content-Type, X-Learner-Id, X-Byok-Groq, X-Byok-Gemini, X-Byok-Openrouter, X-Byok-Freellmapi",
         ),
     );
     headers.insert(CONNECTION, HeaderValue::from_static("close"));

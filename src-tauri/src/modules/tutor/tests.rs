@@ -14,6 +14,8 @@ fn sample_turn(id: &str, role: ConversationRole, text: &str, ts: i64) -> Convers
         role,
         text: text.to_string(),
         correction: None,
+        proper_way: None,
+        why: None,
         follow_up_prompt: None,
         timestamp_unix_ms: ts,
         stage_metadata: None,
@@ -64,7 +66,7 @@ fn prompt_assembly_includes_chronological_history_and_correction_mode_rules() {
     let off = assemble_voice_tutor_prompt(&history, &transcript, CorrectionMode::Off);
     assert!(gentle
         .system_instruction()
-        .contains("brief gentle correction"));
+        .contains("gentle fix in \"properWay\" and \"why\""));
     assert!(off
         .system_instruction()
         .contains("Do NOT provide grammar corrections"));

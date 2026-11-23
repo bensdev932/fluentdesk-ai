@@ -82,15 +82,15 @@ fn invalid_state_transitions_are_rejected_without_mutating_state() {
 }
 
 #[tokio::test]
-async fn start_session_honors_push_to_talk_config_and_natural_correction_default() {
+async fn start_session_honors_push_to_talk_config_and_gentle_correction_default() {
     let default_cfg = StartSpeakingSessionConfig::default();
-    assert_eq!(default_cfg.correction_mode, CorrectionMode::Natural);
+    assert_eq!(default_cfg.correction_mode, CorrectionMode::Gentle);
     assert!(!default_cfg.push_to_talk);
 
     let mut vad_mgr = make_test_manager();
     let vad_snap = vad_mgr.start(&default_cfg).await.unwrap();
     assert!(!vad_snap.push_to_talk);
-    assert_eq!(vad_snap.correction_mode, CorrectionMode::Natural);
+    assert_eq!(vad_snap.correction_mode, CorrectionMode::Gentle);
     let voiced = AudioChunk::new_bounded(
         AudioFormat::WHISPER_16KHZ_MONO_F32,
         vec![0.1; 4_800],

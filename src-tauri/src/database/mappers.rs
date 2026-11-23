@@ -85,6 +85,8 @@ pub fn map_turn_row(row: &SqliteRow) -> Result<ConversationTurn, SessionError> {
         role,
         text: row.get("text"),
         correction: row.get("correction_text"),
+        proper_way: row.try_get("proper_way").ok().flatten(),
+        why: row.try_get("feedback_why").ok().flatten(),
         follow_up_prompt: row.get("follow_up_prompt"),
         timestamp_unix_ms: row.get("timestamp_unix_ms"),
         stage_metadata: map_stage_metadata(row),
@@ -131,10 +133,10 @@ pub fn format_correction_mode(mode: CorrectionMode) -> &'static str {
 
 pub fn parse_correction_mode(raw: &str) -> CorrectionMode {
     match raw {
-        "Gentle" => CorrectionMode::Gentle,
+        "Natural" => CorrectionMode::Natural,
         "Detailed" => CorrectionMode::Detailed,
         "Off" => CorrectionMode::Off,
-        _ => CorrectionMode::Natural,
+        _ => CorrectionMode::Gentle,
     }
 }
 

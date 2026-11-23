@@ -19,7 +19,7 @@ interface StoredProgress extends LearnerProgress {
 }
 
 const DEFAULT_OFFLINE_PREFS: LearnerPreferencesView = {
-  correctionMode: 'Natural',
+  correctionMode: 'Gentle',
   speakingSpeed: 1.0,
   pushToTalkEnabled: false,
   cefrLevel: 'B1',
@@ -80,8 +80,8 @@ export function buildOfflineSessionReview(
   const joinedUser = userTurns.map((t) => t.text.toLowerCase()).join(' ');
   const vocabularyUsed = targetVocab.filter((w) => joinedUser.includes(w.toLowerCase()));
   const grammarFocuses = turns
-    .filter((t) => t.role === 'Tutor' && Boolean(t.correction?.trim()))
-    .map((t) => t.correction!.trim())
+    .filter((t) => t.role === 'Tutor' && Boolean(t.properWay?.trim() || t.correction?.trim()))
+    .map((t) => (t.properWay?.trim() ? (t.why?.trim() ? `${t.properWay.trim()} — ${t.why.trim()}` : t.properWay.trim()) : t.correction!.trim()))
     .slice(0, 4);
   const totalGoals = scaffold?.goals?.length ?? sc.goals.length;
   return {

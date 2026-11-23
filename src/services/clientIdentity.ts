@@ -1,6 +1,6 @@
 import { isTauriRuntime, type AiProviderId } from './tauriService';
 
-export type ByokProviderId = 'groq' | 'gemini' | 'openrouter';
+export type ByokProviderId = 'groq' | 'gemini' | 'openrouter' | 'freellmapi';
 export type ByokKeys = Partial<Record<ByokProviderId, string>>;
 
 const LEARNER_STORAGE_KEY = 'fluentdesk.learnerId.v1';
@@ -51,7 +51,7 @@ export function readByokKeys(): ByokKeys {
 export function saveByokKeys(keys?: Partial<Record<AiProviderId, string>>): ByokKeys {
   const next: ByokKeys = { ...readByokKeys() };
   if (keys) {
-    for (const id of ['groq', 'gemini', 'openrouter'] as const) {
+    for (const id of ['groq', 'gemini', 'openrouter', 'freellmapi'] as const) {
       const val = keys[id]?.trim();
       if (val) next[id] = val;
     }
@@ -65,7 +65,7 @@ export function saveByokKeys(keys?: Partial<Record<AiProviderId, string>>): Byok
 
 export function clearByokKey(id: AiProviderId): ByokKeys {
   const next: ByokKeys = { ...readByokKeys() };
-  if (id === 'groq' || id === 'gemini' || id === 'openrouter') delete next[id];
+  if (id === 'groq' || id === 'gemini' || id === 'openrouter' || id === 'freellmapi') delete next[id];
   memoryByok = next;
   try {
     safeStorage('session')?.setItem(BYOK_STORAGE_KEY, JSON.stringify(next));
@@ -83,6 +83,7 @@ export function buildClientHeaders(extra: Record<string, string> = {}): Record<s
     if (keys.groq?.trim()) headers['X-Byok-Groq'] = keys.groq.trim();
     if (keys.gemini?.trim()) headers['X-Byok-Gemini'] = keys.gemini.trim();
     if (keys.openrouter?.trim()) headers['X-Byok-Openrouter'] = keys.openrouter.trim();
+    if (keys.freellmapi?.trim()) headers['X-Byok-Freellmapi'] = keys.freellmapi.trim();
   }
   return headers;
 }

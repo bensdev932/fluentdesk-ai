@@ -13,8 +13,9 @@ impl SessionRepository {
         session_id: &SessionId,
     ) -> Result<Vec<ConversationTurn>, SessionError> {
         let rows = sqlx::query(
-            "SELECT t.id, t.conversation_id, t.role, t.text, t.correction_text, t.follow_up_prompt,
-                    t.stt_duration_ms, t.llm_duration_ms, t.tts_duration_ms, t.timestamp_unix_ms,
+            "SELECT t.id, t.conversation_id, t.role, t.text, t.correction_text, t.proper_way,
+                    t.feedback_why, t.follow_up_prompt, t.stt_duration_ms, t.llm_duration_ms,
+                    t.tts_duration_ms, t.timestamp_unix_ms,
                     c.correction_mode AS conversation_correction_mode
              FROM conversation_turns t
              JOIN conversations c ON c.id = t.conversation_id

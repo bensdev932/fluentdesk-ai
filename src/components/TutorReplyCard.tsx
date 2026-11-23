@@ -1,6 +1,7 @@
 import React from 'react';
 import type { ReplySourceStatus } from '../services/tauriService';
 import type { TutorReply } from '../types/domain';
+import { CoachingFeedbackBox } from './CoachingFeedbackBox';
 import { formatReplySourceBadge, resolveDistinctFollowUp } from './speakingRoomController';
 
 export interface TutorReplyCardProps {
@@ -28,12 +29,7 @@ export function TutorReplyCard({ reply, playbackWarning, replySource, onReplay, 
       {reply ? (
         <div className="reply-body">
           <p className="spoken-reply">{reply.spokenReply}</p>
-          {reply.correction && (
-            <aside aria-label="Gentle grammar feedback" className="gentle-correction">
-              <span className="coaching-badge">Coaching Tip</span>
-              <p>{reply.correction}</p>
-            </aside>
-          )}
+          <CoachingFeedbackBox reply={reply} onListen={onReplay} />
           {distinctPrompt && <p className="follow-up-prompt">Next prompt: {distinctPrompt}</p>}
         </div>
       ) : (

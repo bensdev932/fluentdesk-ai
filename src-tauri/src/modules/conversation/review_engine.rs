@@ -137,18 +137,26 @@ fn merge_completed_goals(
 fn collect_grammar_focuses(turns: &[ConversationTurn]) -> Vec<String> {
     let mut out = Vec::new();
     for t in turns.iter().filter(|t| t.role == ConversationRole::Tutor) {
-        if let Some(note) = t
-            .correction
-            .as_deref()
-            .map(sanitize_untrusted_text)
-            .filter(|s| !s.is_empty())
-        {
+        if let Some(note) = format_turn_focus(t) {
             if !out.contains(&note) && out.len() < 4 {
                 out.push(note);
             }
         }
     }
     out
+}
+
+fn format_turn_focus(turn: &ConversationTurn) -> Option<String> {
+    let pw = opt_clean(turn.proper_way.as_deref());
+    let why = opt_clean(turn.why.as_deref());
+    if let Some(proper) = pw {
+        return Some(why.map_or(proper.clone(), |w| format!("{proper} — {w}")));
+    }
+    opt_clean(turn.correction.as_deref())
+}
+
+fn opt_clean(raw: Option<&str>) -> Option<String> {
+    raw.map(sanitize_untrusted_text).filter(|s| !s.is_empty())
 }
 
 fn collect_vocab_used(

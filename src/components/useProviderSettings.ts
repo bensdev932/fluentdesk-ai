@@ -37,6 +37,7 @@ const DESKTOP_OPTIONS: ReadonlyArray<{ id: AiProviderId; label: string; isCloud:
   { id: 'groq', label: 'Groq (Free Cloud)', isCloud: true },
   { id: 'gemini', label: 'Gemini (Free Cloud)', isCloud: true },
   { id: 'openrouter', label: 'OpenRouter (Free Cloud)', isCloud: true },
+  { id: 'freellmapi', label: 'FreeLLMAPI (Local Gateway)', isCloud: true },
 ];
 
 export function getProviderSelectOptions(snap: ProvidersSnapshot | null): Array<{ id: AiProviderId; label: string; isCloud: boolean }> {

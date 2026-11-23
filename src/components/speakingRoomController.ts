@@ -60,7 +60,7 @@ export function createInitialSpeakingRoomState(): SpeakingRoomViewModel {
   return {
     sessionId: null,
     state: 'Idle',
-    correctionMode: 'Natural',
+    correctionMode: 'Gentle',
     cefrLevel: def.defaultCefr,
     scenarioId: def.id,
     topic: def.title,

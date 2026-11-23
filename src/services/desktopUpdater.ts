@@ -17,7 +17,7 @@ export interface DesktopUpdateSnapshot {
   message: string;
 }
 
-export const CURRENT_APP_VERSION = '0.1.1';
+export const CURRENT_APP_VERSION = '0.2.0';
 
 type TauriInvoke = (cmd: string, args?: Record<string, unknown>) => Promise<unknown>;
 

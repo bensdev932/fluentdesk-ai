@@ -6,7 +6,9 @@ use crate::domain::{
     SessionState, SessionTopic, TutorReply,
 };
 use crate::modules::conversation::{
-    context::TurnReconcileAction, manager::SessionManager, persistence::stage_meta,
+    context::TurnReconcileAction,
+    manager::SessionManager,
+    persistence::{stage_meta, TurnCoaching},
     types::StartSpeakingSessionConfig,
 };
 use crate::modules::speech::intake::SpeechIntake;
@@ -115,7 +117,7 @@ impl SessionManager {
         self.record_turn(
             ConversationRole::Tutor,
             heard_text,
-            correction,
+            TurnCoaching::legacy_only(correction),
             None,
             ts_ms,
             meta,

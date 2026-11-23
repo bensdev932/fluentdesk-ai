@@ -66,6 +66,8 @@ fn tutor_turn(id: &str, text: &str, follow_up: Option<&str>) -> ConversationTurn
         role: ConversationRole::Tutor,
         text: text.into(),
         correction: None,
+        proper_way: None,
+        why: None,
         follow_up_prompt: follow_up.map(str::to_string),
         timestamp_unix_ms: 10,
         stage_metadata: None,

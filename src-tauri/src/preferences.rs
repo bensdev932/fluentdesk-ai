@@ -87,7 +87,7 @@ mod tests {
         let store = LearnerPreferencesStore::new(SessionRepository::new(pool.clone()));
         assert_eq!(
             store.get_preferences().await.unwrap().correction_mode,
-            CorrectionMode::Natural
+            CorrectionMode::Gentle
         );
         sqlx::query("UPDATE session_settings SET correction_mode = 'Off' WHERE user_id = ?1")
             .bind(DEFAULT_PREFERENCES_USER_ID)
@@ -96,13 +96,13 @@ mod tests {
             .unwrap();
         assert_eq!(
             store.get_preferences().await.unwrap().correction_mode,
-            CorrectionMode::Natural
+            CorrectionMode::Gentle
         );
         let patched = store
             .patch_preferences(LearnerPreferencesPatch {
                 cloud_opt_in: Some(false),
                 preferred_provider: Some(ProviderPreference::Groq),
-                correction_mode: Some(CorrectionMode::Gentle),
+                correction_mode: Some(CorrectionMode::Detailed),
                 ..Default::default()
             })
             .await
@@ -110,7 +110,7 @@ mod tests {
         assert_eq!(patched.preferred_provider, ProviderPreference::Auto);
         assert_eq!(
             store.get_preferences().await.unwrap().correction_mode,
-            CorrectionMode::Gentle
+            CorrectionMode::Detailed
         );
     }
 }

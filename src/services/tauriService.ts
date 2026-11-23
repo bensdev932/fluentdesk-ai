@@ -21,7 +21,7 @@ import type {
   TutorReply,
 } from '../types/domain';
 
-export type AiProviderId = 'ollama' | 'workers_ai' | 'groq' | 'gemini' | 'openrouter';
+export type AiProviderId = 'ollama' | 'workers_ai' | 'groq' | 'gemini' | 'openrouter' | 'freellmapi';
 export type ProviderId = AiProviderId;
 export type AiProviderPreference = 'auto' | AiProviderId;
 export type ProviderPreference = AiProviderPreference;

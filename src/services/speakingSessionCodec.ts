@@ -75,29 +75,28 @@ export function cleanOptionalText(raw: string | null | undefined): string | unde
   return cleaned || undefined;
 }
 
+function pickFeedbackFields(src: { correction?: string; properWay?: string; why?: string; followUpPrompt?: string }) {
+  const correction = cleanOptionalText(src.correction);
+  const properWay = cleanOptionalText(src.properWay);
+  const why = cleanOptionalText(src.why);
+  const followUpPrompt = cleanOptionalText(src.followUpPrompt);
+  return { ...(correction ? { correction } : {}), ...(properWay ? { properWay } : {}), ...(why ? { why } : {}), ...(followUpPrompt ? { followUpPrompt } : {}) };
+}
+
 export function normalizeTurn(turn: ConversationTurn): ConversationTurn {
-  const correction = cleanOptionalText(turn.correction);
-  const followUpPrompt = cleanOptionalText(turn.followUpPrompt);
   return {
     id: turn.id,
     sessionId: turn.sessionId,
     role: turn.role,
     text: sanitizeUntrustedText(turn.text, 2000),
     timestampUnixMs: turn.timestampUnixMs,
-    ...(correction ? { correction } : {}),
-    ...(followUpPrompt ? { followUpPrompt } : {}),
+    ...pickFeedbackFields(turn),
     ...(turn.stageMetadata ? { stageMetadata: turn.stageMetadata } : {}),
   };
 }
 
 export function normalizeReply(reply: TutorReply): TutorReply {
-  const correction = cleanOptionalText(reply.correction);
-  const followUpPrompt = cleanOptionalText(reply.followUpPrompt);
-  return {
-    spokenReply: sanitizeUntrustedText(reply.spokenReply, 2000),
-    ...(correction ? { correction } : {}),
-    ...(followUpPrompt ? { followUpPrompt } : {}),
-  };
+  return { spokenReply: sanitizeUntrustedText(reply.spokenReply, 2000), ...pickFeedbackFields(reply) };
 }
 
 export function offlineWarning(detail: string): SessionError {
@@ -154,8 +153,7 @@ export function buildOfflineTurnOutcome(
       sessionId,
       role: 'Tutor',
       text: reply.spokenReply,
-      ...(reply.correction ? { correction: reply.correction } : {}),
-      ...(reply.followUpPrompt ? { followUpPrompt: reply.followUpPrompt } : {}),
+      ...pickFeedbackFields(reply),
       timestampUnixMs: now + 1,
     },
   };

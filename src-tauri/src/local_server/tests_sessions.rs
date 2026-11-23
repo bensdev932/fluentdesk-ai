@@ -40,7 +40,7 @@ async fn sessions_lifecycle_turns_backend_history_and_coaching_persist() {
             started["correctionMode"].as_str(),
             started["pushToTalk"].as_bool()
         ),
-        (Some("Listening"), Some("Natural"), Some(false))
+        (Some("Listening"), Some("Gentle"), Some(false))
     );
 
     let turn_path = format!("/api/sessions/{sid}/turn");

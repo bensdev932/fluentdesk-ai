@@ -13,7 +13,7 @@ use crate::domain::{
     SessionError, SessionErrorKind, Transcript, TutorReply,
 };
 use crate::modules::tutor::{
-    feedback::parse_tutor_response_or_fallback,
+    feedback::parse_tutor_response_for_utterance,
     prompts::{assemble_voice_tutor_prompt, ChatMessage, TutorPrompt},
 };
 use crate::telemetry::RedactedSecret;
@@ -70,7 +70,7 @@ impl GeminiProvider {
         })
         .await?;
         let text = extract_gemini_text(&raw).map_err(|e| (e, CloudFailure::None))?;
-        parse_tutor_response_or_fallback(&text, correction_mode)
+        parse_tutor_response_for_utterance(&text, correction_mode, Some(&user_transcript.text))
             .map_err(|e| (e, CloudFailure::None))
     }
 

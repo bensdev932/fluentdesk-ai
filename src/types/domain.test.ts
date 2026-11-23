@@ -45,7 +45,7 @@ describe('Domain contracts and voice-first state guards', () => {
     expect(isSessionActiveState('Paused')).toBe(true);
   });
 
-  it('defines all four correction modes with Natural as default', () => {
+  it('defines all four canonical correction modes', () => {
     const expected: CorrectionMode[] = ['Natural', 'Gentle', 'Detailed', 'Off'];
     expect(CORRECTION_MODES).toEqual(expected);
   });

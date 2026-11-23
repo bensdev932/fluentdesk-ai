@@ -46,6 +46,8 @@ mod cloud_ws_tests;
 #[cfg(test)]
 mod discovery_tests;
 #[cfg(test)]
+mod freellmapi_tests;
+#[cfg(test)]
 mod ollama_resilience_tests;
 #[cfg(test)]
 mod resilience_review_tests;

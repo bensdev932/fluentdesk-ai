@@ -7,6 +7,7 @@ const PROVIDER_TAGS: Record<AiProviderId, string> = {
   groq: 'Cloud · Groq',
   gemini: 'Cloud · Gemini',
   openrouter: 'Cloud · OpenRouter',
+  freellmapi: 'Cloud · FreeLLMAPI',
 };
 
 export type ApiJsonResult<T> =

@@ -11,7 +11,7 @@ use crate::domain::{
     Transcript, TutorReply,
 };
 use crate::modules::tutor::{
-    feedback::parse_tutor_response_or_fallback,
+    feedback::parse_tutor_response_for_utterance,
     prompts::{assemble_scaffolded_tutor_prompt, assemble_voice_tutor_prompt, TutorPrompt},
 };
 use async_trait::async_trait;
@@ -120,7 +120,7 @@ impl AiProvider for OllamaAiProvider {
     ) -> Result<TutorReply, SessionError> {
         let prompt = assemble_voice_tutor_prompt(history, user_transcript, correction_mode);
         let raw = self.generate_with_model_fallback(&prompt).await?;
-        parse_tutor_response_or_fallback(&raw, correction_mode)
+        parse_tutor_response_for_utterance(&raw, correction_mode, Some(&user_transcript.text))
     }
 
     async fn stream_routed_reply(

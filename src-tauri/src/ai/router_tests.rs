@@ -63,6 +63,8 @@ async fn openai_compat_formats_history_and_caches_three_tier_400_fallback() {
         role: ConversationRole::User,
         text: "I landed in Kyoto.".into(),
         correction: None,
+        proper_way: None,
+        why: None,
         follow_up_prompt: None,
         timestamp_unix_ms: 100,
         stage_metadata: None,

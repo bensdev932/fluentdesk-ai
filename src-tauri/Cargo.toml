@@ -1,6 +1,6 @@
 [package]
 name = "fluentdesk-core"
-version = "0.1.1"
+version = "0.2.0"
 edition = "2021"
 description = "FluentDesk AI — Local-first, voice-first English speaking tutor core and Tauri backend"
 license = "MIT"

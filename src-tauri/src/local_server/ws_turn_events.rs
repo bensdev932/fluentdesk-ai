@@ -118,6 +118,8 @@ fn build_user_turn(sid: &SessionId, text: String) -> ConversationTurn {
         role: ConversationRole::User,
         text,
         correction: None,
+        proper_way: None,
+        why: None,
         follow_up_prompt: None,
         timestamp_unix_ms: current_unix_ms(),
         stage_metadata: None,

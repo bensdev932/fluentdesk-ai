@@ -51,7 +51,7 @@ pub(crate) fn build_candidate_list(
 pub(crate) fn consent_err() -> SessionError {
     SessionError::new(
         SessionErrorKind::AiProviderUnavailable,
-        "Cloud AI is disabled. Enable Cloud Opt-In to use Groq, Gemini, or OpenRouter.",
+        "Cloud AI is disabled. Enable Cloud Opt-In to use Groq, Gemini, OpenRouter, or FreeLLMAPI.",
         true,
         None,
     )
@@ -134,7 +134,7 @@ pub(crate) async fn invoke_provider(
                 .generate_with_error(turn.history, turn.transcript, turn.mode)
                 .await?
         }
-        ProviderId::Groq | ProviderId::Openrouter => {
+        ProviderId::Groq | ProviderId::Openrouter | ProviderId::Freellmapi => {
             OpenAiCompatProvider::new(id, url, &model, key)
                 .generate_with_error(turn.history, turn.transcript, turn.mode)
                 .await?

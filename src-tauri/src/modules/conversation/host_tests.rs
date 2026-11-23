@@ -116,7 +116,7 @@ async fn host_supplies_prior_turns_to_ai_and_stops_previous_session_on_new_start
 
     let calls = ai.recorded_calls();
     assert_eq!((calls[0].0, calls[1].0), (0, 2));
-    assert_eq!(calls[1].2, CorrectionMode::Natural);
+    assert_eq!(calls[1].2, CorrectionMode::Gentle);
 
     let s2 = host
         .start_session(StartSpeakingSessionConfig {

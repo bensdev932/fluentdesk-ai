@@ -69,7 +69,7 @@ async fn repository_persists_user_session_coaching_tips_and_end_timestamp() {
         .get_or_create_preferences("user-1", 1_700_000_000_000)
         .await
         .expect("settings");
-    assert_eq!(settings.correction_mode, CorrectionMode::Natural);
+    assert_eq!(settings.correction_mode, CorrectionMode::Gentle);
     assert!(!settings.cloud_opt_in && !settings.raw_audio_recording_opt_in);
 
     let session_id = SessionId::new("sess-100").expect("valid session id");
@@ -88,6 +88,8 @@ async fn repository_persists_user_session_coaching_tips_and_end_timestamp() {
         role: ConversationRole::User,
         text: "Yesterday I go to the cinema.".to_string(),
         correction: None,
+        proper_way: None,
+        why: None,
         follow_up_prompt: None,
         timestamp_unix_ms: 1_700_000_002_000,
         stage_metadata: Some(TurnStageMetadata {
@@ -104,6 +106,8 @@ async fn repository_persists_user_session_coaching_tips_and_end_timestamp() {
         role: ConversationRole::Tutor,
         text: "Oh nice, you went to the cinema! What movie did you watch?".to_string(),
         correction: Some("Say \"I went\" for yesterday.".to_string()),
+        proper_way: None,
+        why: None,
         follow_up_prompt: Some("Who did you go with?".to_string()),
         timestamp_unix_ms: 1_700_000_003_000,
         stage_metadata: Some(TurnStageMetadata {
@@ -158,6 +162,8 @@ async fn repository_enforces_foreign_key_and_unique_sequence_constraints() {
         role: ConversationRole::User,
         text: "Hello?".to_string(),
         correction: None,
+        proper_way: None,
+        why: None,
         follow_up_prompt: None,
         timestamp_unix_ms: 1_700_000_000_000,
         stage_metadata: None,

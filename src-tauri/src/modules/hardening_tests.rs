@@ -84,7 +84,7 @@ async fn t053_correction_mode_settings_persist_natural_gentle_detailed_and_off()
     let pool = init_sqlite_pool("sqlite::memory:").await.expect("db");
     let store = LearnerPreferencesStore::for_user(SessionRepository::new(pool), "u1");
     let initial = store.get_preferences().await.expect("load");
-    assert_eq!(initial.correction_mode, CorrectionMode::Natural);
+    assert_eq!(initial.correction_mode, CorrectionMode::Gentle);
     for mode in [
         CorrectionMode::Gentle,
         CorrectionMode::Detailed,

@@ -2,7 +2,10 @@
 
 use crate::domain::{
     AudioFormat, ConversationRole, ConversationTurn, CorrectionMode, ProviderHealth, SessionError,
-    SessionErrorKind, SessionId, SessionState, TurnStageMetadata, TutorReply,
+    SessionErrorKind, SessionState, TurnStageMetadata, TutorReply,
+};
+pub(crate) use crate::modules::conversation::persistence_helpers::{
+    build_turn, current_unix_ms, invalid_transition_err, stage_meta, TurnCoaching,
 };
 use crate::modules::conversation::{
     manager::SessionManager,
@@ -73,8 +76,15 @@ impl SessionManager {
         mode: CorrectionMode,
     ) -> Result<ConversationTurn, SessionError> {
         let meta = stage_meta(Some(stt_ms), None, mode);
-        self.record_turn(ConversationRole::User, text, None, None, ts_ms, meta)
-            .await
+        self.record_turn(
+            ConversationRole::User,
+            text,
+            TurnCoaching::default(),
+            None,
+            ts_ms,
+            meta,
+        )
+        .await
     }
 
     pub(crate) async fn record_tutor_turn(
@@ -85,11 +95,12 @@ impl SessionManager {
         mode: CorrectionMode,
     ) -> Result<ConversationTurn, SessionError> {
         let meta = stage_meta(None, Some(llm_ms), mode);
+        let coaching = TurnCoaching::from_reply(reply);
         let turn = self
             .record_turn(
                 ConversationRole::Tutor,
                 &reply.spoken_reply,
-                reply.correction.clone(),
+                coaching,
                 reply.follow_up_prompt.clone(),
                 ts_ms,
                 meta,
@@ -103,7 +114,7 @@ impl SessionManager {
         &mut self,
         role: ConversationRole,
         text: &str,
-        correction: Option<String>,
+        coaching: TurnCoaching,
         follow_up_prompt: Option<String>,
         ts_ms: i64,
         meta: TurnStageMetadata,
@@ -115,7 +126,7 @@ impl SessionManager {
             seq,
             role,
             text,
-            correction,
+            coaching,
             follow_up_prompt,
             ts_ms,
             meta,
@@ -174,56 +185,4 @@ impl SessionManager {
         self.capture_rx = Some(rx);
         Ok(())
     }
-}
-
-pub(crate) fn stage_meta(
-    stt: Option<u32>,
-    llm: Option<u32>,
-    mode: CorrectionMode,
-) -> TurnStageMetadata {
-    TurnStageMetadata {
-        stt_duration_ms: stt,
-        llm_duration_ms: llm,
-        tts_duration_ms: None,
-        correction_mode: Some(mode),
-    }
-}
-
-pub(crate) fn invalid_transition_err(from: SessionState, to: SessionState) -> SessionError {
-    SessionError::new(
-        SessionErrorKind::InvalidStateTransition,
-        "Cannot perform that session action in the current state.",
-        true,
-        Some(format!("Invalid transition from {from:?} to {to:?}")),
-    )
-}
-
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn build_turn(
-    sid: &SessionId,
-    seq: u32,
-    role: ConversationRole,
-    text: &str,
-    correction: Option<String>,
-    follow_up_prompt: Option<String>,
-    timestamp_unix_ms: i64,
-    meta: TurnStageMetadata,
-) -> ConversationTurn {
-    ConversationTurn {
-        id: format!("{}-turn-{seq}", sid.as_str()),
-        session_id: sid.clone(),
-        role,
-        text: text.to_string(),
-        correction,
-        follow_up_prompt,
-        timestamp_unix_ms,
-        stage_metadata: Some(meta),
-    }
-}
-
-pub(crate) fn current_unix_ms() -> i64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis() as i64)
-        .unwrap_or(0)
 }

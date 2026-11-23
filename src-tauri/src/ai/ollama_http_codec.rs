@@ -2,6 +2,24 @@
 
 use crate::domain::{SessionError, SessionErrorKind};
 use crate::telemetry::redact_sensitive_log_text;
+use serde::Deserialize;
+use std::time::Duration;
+
+#[derive(Deserialize)]
+pub(crate) struct OllamaStreamChunk {
+    #[serde(default)]
+    pub response: String,
+    #[serde(default)]
+    pub done: bool,
+    #[serde(default)]
+    pub error: Option<String>,
+}
+
+#[derive(Clone, Copy)]
+pub(crate) struct StreamTimeouts {
+    pub first: Duration,
+    pub idle: Duration,
+}
 
 pub(crate) struct RawHttpResponse {
     pub status: u16,

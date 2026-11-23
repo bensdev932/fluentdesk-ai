@@ -19,9 +19,9 @@ afterEach(() => {
 });
 
 describe('SpeakingRoom state controller and single SpeakingSessionPort wiring', () => {
-  it('defaults CorrectionMode to Natural and enables Start/Stop across canonical states', () => {
+  it('defaults CorrectionMode to Gentle and enables Start/Stop across canonical states', () => {
     const idleVm = createInitialSpeakingRoomState();
-    expect(idleVm.correctionMode).toBe('Natural');
+    expect(idleVm.correctionMode).toBe('Gentle');
     const idlePerms = getSpeakingControlPermissions(idleVm);
     expect(idlePerms).toMatchObject({ canStart: true, canStop: false, canHoldPtt: false });
 

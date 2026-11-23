@@ -11,6 +11,7 @@ pub enum ProviderId {
     Groq,
     Gemini,
     Openrouter,
+    Freellmapi,
 }
 
 impl FromStr for ProviderId {
@@ -22,6 +23,7 @@ impl FromStr for ProviderId {
             "groq" => Ok(Self::Groq),
             "gemini" => Ok(Self::Gemini),
             "openrouter" => Ok(Self::Openrouter),
+            "freellmapi" => Ok(Self::Freellmapi),
             _ => Err(()),
         }
     }
@@ -37,6 +39,7 @@ pub enum ProviderPreference {
     Groq,
     Gemini,
     Openrouter,
+    Freellmapi,
 }
 
 impl ProviderPreference {
@@ -47,6 +50,7 @@ impl ProviderPreference {
             Self::Groq => "groq",
             Self::Gemini => "gemini",
             Self::Openrouter => "openrouter",
+            Self::Freellmapi => "freellmapi",
         }
     }
 
@@ -57,11 +61,15 @@ impl ProviderPreference {
             Self::Groq => Some(ProviderId::Groq),
             Self::Gemini => Some(ProviderId::Gemini),
             Self::Openrouter => Some(ProviderId::Openrouter),
+            Self::Freellmapi => Some(ProviderId::Freellmapi),
         }
     }
 
     pub fn is_cloud(self) -> bool {
-        matches!(self, Self::Groq | Self::Gemini | Self::Openrouter)
+        matches!(
+            self,
+            Self::Groq | Self::Gemini | Self::Openrouter | Self::Freellmapi
+        )
     }
 }
 
@@ -75,6 +83,7 @@ impl FromStr for ProviderPreference {
             "groq" => Ok(Self::Groq),
             "gemini" => Ok(Self::Gemini),
             "openrouter" => Ok(Self::Openrouter),
+            "freellmapi" => Ok(Self::Freellmapi),
             _ => Err(()),
         }
     }

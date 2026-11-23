@@ -2,9 +2,9 @@ import React from 'react';
 import { CORRECTION_MODES, type CorrectionMode } from '../types/domain';
 
 const MODE_LABELS: Record<CorrectionMode, string> = {
+  Gentle: 'Balanced coaching (grammar & natural phrasing)',
   Natural: 'Natural conversation (recast smoothly)',
-  Gentle: 'Gentle coaching tips after your turn',
-  Detailed: 'Detailed grammar & vocabulary tips',
+  Detailed: 'Detailed grammar & native phrasing tips',
   Off: 'Off (pure fluency conversation only)',
 };
 

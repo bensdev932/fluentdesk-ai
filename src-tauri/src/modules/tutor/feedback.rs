@@ -3,6 +3,7 @@
 use crate::domain::{
     sanitize_untrusted_text, CorrectionMode, SessionError, SessionErrorKind, TutorReply,
 };
+use crate::modules::tutor::feedback_guard::{clean_non_placeholder, resolve_structured_feedback};
 use crate::modules::tutor::stream_parser::SpokenJsonStreamParser;
 use serde::Deserialize;
 
@@ -11,6 +12,12 @@ use serde::Deserialize;
 struct RawTutorJson {
     #[serde(alias = "spoken_reply")]
     spoken_reply: String,
+    #[serde(default, alias = "needs_improvement")]
+    needs_improvement: Option<bool>,
+    #[serde(default, alias = "proper_way")]
+    proper_way: Option<String>,
+    #[serde(default, alias = "feedback_why")]
+    why: Option<String>,
     #[serde(default)]
     correction: Option<String>,
     #[serde(default, alias = "follow_up_prompt")]
@@ -19,16 +26,24 @@ struct RawTutorJson {
     completed_goal_ids: Vec<String>,
 }
 
-/// Parses untrusted LLM output as structured JSON (`spokenReply`, `correction`, `followUpPrompt`)
-/// and falls back to safe plain text with dynamic question extraction when needed (`T032`).
+/// Parses untrusted LLM output as structured JSON and falls back cleanly on plain text (`T032`).
 pub fn parse_tutor_response_or_fallback(
     raw_model_output: &str,
     correction_mode: CorrectionMode,
 ) -> Result<TutorReply, SessionError> {
+    parse_tutor_response_for_utterance(raw_model_output, correction_mode, None)
+}
+
+/// Parses untrusted LLM output while guarding against no-op rewrites matching `learner_utterance`.
+pub fn parse_tutor_response_for_utterance(
+    raw_model_output: &str,
+    correction_mode: CorrectionMode,
+    learner_utterance: Option<&str>,
+) -> Result<TutorReply, SessionError> {
     let without_think = strip_think_blocks(raw_model_output.trim());
     let stripped = strip_markdown_code_fence(&without_think);
     if let Some(parsed) = try_parse_raw_json(stripped) {
-        return build_validated_reply(parsed, correction_mode);
+        return build_validated_reply(parsed, correction_mode, learner_utterance);
     }
     let recovered = extract_truncated_spoken_reply(stripped);
     let text = recovered.as_deref().unwrap_or(stripped);
@@ -60,12 +75,24 @@ pub fn extract_follow_up_prompt(spoken_reply: &str) -> Option<String> {
 fn build_validated_reply(
     parsed: RawTutorJson,
     correction_mode: CorrectionMode,
+    learner_utterance: Option<&str>,
 ) -> Result<TutorReply, SessionError> {
-    let correction = filter_correction_by_mode(parsed.correction, correction_mode);
+    let fb = resolve_structured_feedback(
+        parsed.needs_improvement,
+        parsed.proper_way,
+        parsed.why,
+        parsed.correction,
+        correction_mode,
+        learner_utterance,
+    );
     let follow_up = resolve_follow_up(&parsed.spoken_reply, parsed.follow_up_prompt);
     let goals = sanitize_goal_ids(parsed.completed_goal_ids);
-    TutorReply::new_validated(parsed.spoken_reply, correction, follow_up)
-        .map(|reply| reply.with_completed_goals(goals))
+    TutorReply::new_validated(parsed.spoken_reply, fb.legacy_summary, follow_up)
+        .map(|reply| {
+            reply
+                .with_structured_feedback(fb.proper_way, fb.why)
+                .with_completed_goals(goals)
+        })
         .map_err(map_empty_reply_error)
 }
 
@@ -87,22 +114,6 @@ fn resolve_follow_up(spoken_reply: &str, explicit: Option<String>) -> Option<Str
     clean_non_placeholder(explicit)
         .filter(|f| !f.eq_ignore_ascii_case(&clean_spoken))
         .or_else(|| extract_follow_up_prompt(&clean_spoken))
-}
-
-fn filter_correction_by_mode(
-    correction: Option<String>,
-    correction_mode: CorrectionMode,
-) -> Option<String> {
-    if correction_mode == CorrectionMode::Off {
-        return None;
-    }
-    clean_non_placeholder(correction)
-}
-
-fn clean_non_placeholder(value: Option<String>) -> Option<String> {
-    value.map(|s| sanitize_untrusted_text(&s)).filter(|s| {
-        !s.is_empty() && !s.eq_ignore_ascii_case("null") && !s.eq_ignore_ascii_case("none")
-    })
 }
 
 fn try_parse_raw_json(text: &str) -> Option<RawTutorJson> {

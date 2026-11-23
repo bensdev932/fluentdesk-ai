@@ -12,6 +12,9 @@ node_modules/
 dist/
 dist-ssr/
 *.local
+playwright-report/
+test-results/
+blob-report/
 
 # Cloudflare & Convex build/secret artifacts
 .cloudflare/

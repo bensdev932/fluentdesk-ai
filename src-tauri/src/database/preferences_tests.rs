@@ -70,7 +70,7 @@ async fn preferences_store_validates_speed_resets_cloud_provider_and_persists_ac
     let store1 = LearnerPreferencesStore::new(SessionRepository::new(pool1.clone()));
 
     let initial = store1.get_preferences().await.expect("defaults");
-    assert_eq!(initial.correction_mode, CorrectionMode::Natural);
+    assert_eq!(initial.correction_mode, CorrectionMode::Gentle);
     assert_eq!(initial.cefr_level, CefrLevel::B1);
     assert!(!initial.cloud_opt_in && !initial.raw_audio_recording_opt_in);
     assert!(RawAudioRetentionPolicy::from_preferences(&initial)

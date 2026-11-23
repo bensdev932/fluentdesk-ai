@@ -43,6 +43,8 @@ pub fn build_scenario_opener(
         TutorReply {
             spoken_reply: spoken.to_string(),
             correction: None,
+            proper_way: None,
+            why: None,
             follow_up_prompt: Some(prompt.to_string()),
             completed_goal_ids: Vec::new(),
         }
@@ -67,6 +69,8 @@ fn build_free_conversation_opener(topic: &str, learner_facts: &[String]) -> Tuto
     TutorReply::new_validated(&spoken, None, Some(prompt.clone())).unwrap_or(TutorReply {
         spoken_reply: spoken,
         correction: None,
+        proper_way: None,
+        why: None,
         follow_up_prompt: Some(prompt),
         completed_goal_ids: Vec::new(),
     })

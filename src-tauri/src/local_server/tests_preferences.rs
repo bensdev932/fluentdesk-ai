@@ -18,7 +18,7 @@ async fn preferences_endpoints_validate_speed_inherit_session_defaults_and_sync_
             initial["preferredProvider"].as_str(),
         ),
         (
-            Some("Natural"),
+            Some("Gentle"),
             Some(1.0),
             Some(false),
             Some(false),

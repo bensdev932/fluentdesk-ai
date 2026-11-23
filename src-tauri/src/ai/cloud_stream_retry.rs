@@ -10,7 +10,7 @@ use crate::ai::provider::TutorStreamItem;
 use crate::ai::router_types::RoutedTutorReply;
 use crate::domain::{CorrectionMode, SessionError};
 use crate::modules::tutor::{
-    feedback::parse_tutor_response_or_fallback, prompts::TutorPrompt,
+    feedback::parse_tutor_response_for_utterance, prompts::TutorPrompt,
     stream_parser::SpokenJsonStreamParser,
 };
 use tokio::sync::mpsc;
@@ -30,6 +30,7 @@ pub(crate) struct SsePumpCtx {
     pub sent_sentence: bool,
     provider: ProviderId,
     model: String,
+    learner_text: Option<String>,
 }
 
 impl SsePumpCtx {
@@ -41,7 +42,13 @@ impl SsePumpCtx {
             sent_sentence: false,
             provider,
             model: model.into(),
+            learner_text: None,
         }
+    }
+
+    pub(crate) fn with_learner_text(mut self, text: impl Into<String>) -> Self {
+        self.learner_text = Some(text.into());
+        self
     }
 
     pub(crate) async fn abort_err(&self, tx: &SseOutTx, err: CloudHttpError) {
@@ -155,7 +162,16 @@ pub(crate) async fn try_reopen_sse(
 pub(crate) async fn emit_cloud_final(mut ctx: SsePumpCtx, tx: &SseOutTx, mode: CorrectionMode) {
     let (tail, raw) = ctx.parser.finish();
     if send_sentences(&mut ctx.sent_sentence, tail, tx).await {
-        let item = build_final_item(ctx.provider, ctx.model, &raw, mode);
+        let reply = parse_tutor_response_for_utterance(&raw, mode, ctx.learner_text.as_deref());
+        let item = reply.map(|r| {
+            TutorStreamItem::Final(RoutedTutorReply {
+                reply: r,
+                provider: ctx.provider,
+                model: ctx.model,
+                is_cloud: ctx.provider.is_cloud(),
+                failover_note: None,
+            })
+        });
         let _ = tx.send(item).await;
     }
 }
@@ -168,21 +184,4 @@ async fn send_sentences(sent_sentence: &mut bool, sentences: Vec<String>, tx: &S
         }
     }
     true
-}
-
-fn build_final_item(
-    provider: ProviderId,
-    model: String,
-    raw: &str,
-    mode: CorrectionMode,
-) -> Result<TutorStreamItem, SessionError> {
-    parse_tutor_response_or_fallback(raw, mode).map(|reply| {
-        TutorStreamItem::Final(RoutedTutorReply {
-            reply,
-            provider,
-            model,
-            is_cloud: provider.is_cloud(),
-            failover_note: None,
-        })
-    })
 }

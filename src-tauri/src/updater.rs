@@ -1,7 +1,17 @@
 //! Signed GitHub Releases auto-updater commands backed by `tauri-plugin-updater`.
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::AppHandle;
 use tauri_plugin_updater::{Update, UpdaterExt};
+
+static INSTALL_IN_FLIGHT: AtomicBool = AtomicBool::new(false);
+
+struct InstallGuard;
+impl Drop for InstallGuard {
+    fn drop(&mut self) {
+        INSTALL_IN_FLIGHT.store(false, Ordering::SeqCst);
+    }
+}
 
 /// UI-facing snapshot describing the desktop app's current updater status.
 #[derive(Debug, Clone, serde::Serialize)]
@@ -29,6 +39,16 @@ pub async fn check_desktop_update(app: AppHandle) -> DesktopUpdateSnapshot {
 #[tauri::command]
 pub async fn install_desktop_update(app: AppHandle) -> Result<DesktopUpdateSnapshot, String> {
     let current = app.package_info().version.to_string();
+    if INSTALL_IN_FLIGHT.swap(true, Ordering::SeqCst) {
+        return Ok(DesktopUpdateSnapshot {
+            status: "installing",
+            current_version: current,
+            latest_version: None,
+            notes: None,
+            message: "Update already installing...".into(),
+        });
+    }
+    let _guard = InstallGuard;
     let Some(update) = fetch_latest_update(&app).await? else {
         return Ok(up_to_date_snapshot(current));
     };

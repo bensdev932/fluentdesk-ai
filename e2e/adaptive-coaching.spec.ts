@@ -98,7 +98,7 @@ test.describe('FluentDesk AI adaptive coaching & FreeLLMAPI E2E flows', () => {
     expect(recorded.turnModes.at(-1)).toBe('Detailed');
   });
 
-  test('persists A1 CEFR across scenarios & mid-session, toggles optional script, and triggers updater install', async ({ page }) => {
+  test('persists A1 CEFR across scenarios & mid-session, toggles optional script, and triggers auto-update without button', async ({ page }) => {
     await page.addInitScript(() => {
       const w = window as unknown as {
         __updaterCalls?: string[];
@@ -109,15 +109,18 @@ test.describe('FluentDesk AI adaptive coaching & FreeLLMAPI E2E flows', () => {
         invoke: async (cmd: string) => {
           w.__updaterCalls?.push(cmd);
           if (cmd === 'check_desktop_update') {
-            return { status: 'update_available', currentVersion: '0.2.1', latestVersion: '0.2.2', notes: 'Update', message: 'Update v0.2.2 available.' };
+            return { status: 'update_available', currentVersion: '0.2.2', latestVersion: '0.2.3', notes: 'Update', message: 'Update v0.2.3 available.' };
           }
-          return { status: 'installing', currentVersion: '0.2.1', latestVersion: '0.2.2', notes: null, message: 'Installing v0.2.2...' };
+          return { status: 'installing', currentVersion: '0.2.2', latestVersion: '0.2.3', notes: null, message: 'Installing v0.2.3...' };
         },
       };
     });
 
     const recorded = await setupAdaptiveCoachingStubs(page);
     await page.goto('/');
+
+    await expect(page.locator('[aria-label="Desktop Auto-Updater"] button')).toHaveCount(0);
+    await expect.poll(() => page.evaluate(() => (window as unknown as { __updaterCalls?: string[] }).__updaterCalls)).toContain('install_desktop_update');
 
     const cefrSelect = await pickLocator(page, [
       () => page.getByLabel('CEFR Level'),
@@ -155,12 +158,5 @@ test.describe('FluentDesk AI adaptive coaching & FreeLLMAPI E2E flows', () => {
     await expect(suggestedRegion).toBeVisible();
     await suggestedRegion.getByRole('button', { name: 'Use line' }).first().click();
     await expect(page.getByRole('region', { name: 'Conversation Transcript' })).toContainText('Can I get an iced latte, please?');
-
-    const updateBtn = await pickLocator(page, [
-      () => page.getByRole('button', { name: /Update to v0\.2\.2/i }),
-      () => page.locator('[aria-label="Desktop Auto-Updater"] button'),
-    ]);
-    await updateBtn.click();
-    await expect.poll(() => page.evaluate(() => (window as unknown as { __updaterCalls?: string[] }).__updaterCalls)).toContain('install_desktop_update');
   });
 });

@@ -1,4 +1,8 @@
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { App } from '../App';
+import { createFakeSpeakingSessionPort } from '../test/voiceTestStubs';
 import {
   checkDesktopUpdate,
   CURRENT_APP_VERSION,
@@ -59,5 +63,15 @@ describe('desktopUpdater', () => {
     const snap = await checkDesktopUpdate();
     expect(snap.status).toBe('rate_limited');
     expect(snap.message).toContain('rate limit');
+  });
+
+  it('renders Desktop Auto-Updater status pill without an update button inside App header under Tauri runtime', () => {
+    (globalThis as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ = { invoke: vi.fn() };
+    const html = renderToStaticMarkup(createElement(App, { sessionClient: createFakeSpeakingSessionPort() }));
+    expect(html).toContain('Local Engine · Private by Default');
+    expect(html).toContain('Desktop Auto-Updater');
+    expect(html).toContain(`v${CURRENT_APP_VERSION}`);
+    expect(html).not.toContain('Check for Updates');
+    expect(html).not.toContain('Update to v');
   });
 });
